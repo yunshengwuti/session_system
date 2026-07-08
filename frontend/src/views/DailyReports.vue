@@ -187,7 +187,9 @@ const generateReport = async () => {
   try {
     await reportAPI.createDailyReport(selectedDate.value)
     ElMessage.success('日报生成成功')
-    loadReports()
+    // 等待500ms确保数据已写入数据库
+    await new Promise(resolve => setTimeout(resolve, 500))
+    await loadReports()
   } catch (error) {
     ElMessage.error('日报生成失败')
     console.error(error)

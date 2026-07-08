@@ -134,23 +134,24 @@ async def generate_daily_report(sessions_data: list) -> dict:
 
 ## 任务1：提取具体问题
 
-仔细阅读每个对话，自己总结出客户遇到的**具体问题**：
-- 要具体，不要笼统（如"Excel插件无法使用"而不是"Excel问题"）
-- 统计每个问题在这批对话中出现的次数
-- 格式：{{"具体问题描述": 出现次数}}
+仔细阅读每个对话，自己总结出客户遇到的**问题关键字**：
+- 关键字稍微具体一点，不要太笼统（如"Excel插件无法使用"而不是"Excel问题"）
+- 对关键字在这批对话中出现的次数进行统计
+- 格式：{{"问题关键字描述": 出现次数}}
 
 示例仅供参考，实际请根据对话内容自己总结：
 {{"Excel插件无法使用": 3, "密码重置流程不清楚": 2, "BDB权限需要申请": 5}}
 
 ## 任务2：问题分类
 
-根据你提取的具体问题，自己归纳出合适的业务分类：
+根据你提取的具体关键字问题，归纳出5-8个大类：
 - 格式：{{"分类名": 会话数}}
-- 分类名称自己定义，要能准确反映问题性质
+- 分类要**粗粒度汇总**，不要太细分
+- 示例分类：账号管理、数据问题、功能咨询、权限问题、系统Bug、操作指导等
 
 ## 输出格式（纯JSON）：
 {{
-  "keywords": {{"具体问题1": 次数, "具体问题2": 次数}},
+  "keywords": {{"问题关键字描述1": 次数, "问题关键字描述2": 次数}},
   "categories": {{"分类1": 会话数, "分类2": 会话数}}
 }}
 
@@ -332,34 +333,206 @@ async def generate_daily_report(sessions_data: list) -> dict:
 
 
 async def generate_weekly_report(week_sessions_data: list, daily_reports: list) -> dict:
-    """生成周报（占位）"""
+    """生成周报 - 基于日报汇总"""
     from collections import Counter
+    from datetime import datetime
 
-    total_sessions = len(week_sessions_data)
+    if not daily_reports or len(daily_reports) < 3 or len(daily_reports) > 7:
+        raise ValueError("周报需要3-7份日报数据")
 
-    # 统计机构和客服分布
-    org_counter = Counter()
-    service_counter = Counter()
+    # ========== 阶段1：代码汇总数据 ==========
 
-    for session in week_sessions_data:
-        if session.get("org_name"):
-            org_counter[session["org_name"]] += 1
-        if session.get("customer_service"):
-            service_counter[session["customer_service"]] += 1
+    # 1. 总体数据统计
+    total_sessions = sum([r["total_sessions"] for r in daily_reports])
+    daily_avg = round(total_sessions / len(daily_reports), 1)
 
-    # 每日趋势（从daily_reports提取）
+    # 2. 合并关键问题（代码完成）
+    all_problems = Counter()
+    for report in daily_reports:
+        keywords = report.get("keywords_json", {})
+        for problem, count in keywords.items():
+            all_problems[problem] += count
+
+    top_problems = all_problems.most_common(10)
+
+    # 3. 合并问题分类
+    all_categories = Counter()
+    for report in daily_reports:
+        categories = report.get("category_stats_json", {})
+        for category, percentage in categories.items():
+            # 从百分比还原到实际会话数
+            count = round(report["total_sessions"] * percentage / 100)
+            all_categories[category] += count
+
+    # 转回百分比
+    total_category_count = sum(all_categories.values())
+    merged_categories = {}
+    for category, count in all_categories.items():
+        percentage = (count / total_category_count * 100) if total_category_count > 0 else 0
+        merged_categories[category] = round(percentage, 1)
+
+    # 4. 提取高优先级风险
+    high_risks = []
+    for report in daily_reports:
+        org_data = report.get("org_distribution_json", {})
+        risks = org_data.get("risks", [])
+        for risk in risks:
+            if risk.get("urgency") in ["高", "中"]:
+                high_risks.append({
+                    "date": str(report["report_date"]),
+                    "type": risk.get("risk_type", ""),
+                    "description": risk.get("description", ""),
+                    "urgency": risk.get("urgency", ""),
+                    "affected": risk.get("affected_customers", 0)
+                })
+
+    # 只保留前10个
+    high_risks = high_risks[:10]
+
+    # 5. 每日趋势数据
     daily_trend = []
     for report in daily_reports:
         daily_trend.append({
             "date": str(report["report_date"]),
-            "sessions": report["total_sessions"]
+            "sessions": report["total_sessions"],
+            "brief": report.get("long_duration_issues", "")[:150]  # 只取前150字
         })
 
-    return {
-        "keywords_json": {"占位关键词": total_sessions},
-        "category_stats_json": {"占位分类": 100},
-        "org_distribution_json": dict(org_counter),
-        "service_stats_json": dict(service_counter),
-        "daily_trend_json": daily_trend,
-        "ai_summary": f"本周共接待 {total_sessions} 个会话。（占位数据，请实现AI接口）"
-    }
+    # 6. 统计客服分布
+    service_counter = Counter()
+    for report in daily_reports:
+        service_stats = report.get("service_stats_json", {})
+        for service, count in service_stats.items():
+            service_counter[service] += count
+
+    # ========== 阶段2：构建精简prompt给AI分析 ==========
+
+    start_date = daily_reports[0]["report_date"]
+    end_date = daily_reports[-1]["report_date"]
+
+    prompt = f"""你是客服数据分析专家。基于本周汇总数据生成周报。
+
+## 本周数据汇总（{start_date} 至 {end_date}，共{len(daily_reports)}天）
+
+### 数字统计
+- 总会话数：{total_sessions}
+- 日均会话数：{daily_avg}
+- 每日数据：
+{chr(10).join([f"  {d['date']}: {d['sessions']}个会话" for d in daily_trend])}
+
+### 高频问题TOP10（本周累计）
+{json.dumps(dict(top_problems), ensure_ascii=False, indent=2)}
+
+### 每日详细分类汇总（需要你重新归纳）
+以下是本周各日报的详细问题分类，请你**重新归纳为5-8个大类**：
+{json.dumps(merged_categories, ensure_ascii=False, indent=2)}
+
+示例大类：账号管理、数据问题、功能咨询、权限问题、系统Bug、操作指导等
+**要求**：合并相似的细分类，输出粗粒度的大类统计
+
+### 本周风险列表（仅高/中紧急度）
+{json.dumps(high_risks, ensure_ascii=False, indent=2)}
+
+### 每日问题概览摘要（关键句）
+{chr(10).join([f"- {d['date']}：{d['brief']}" for d in daily_trend])}
+
+## 任务：生成周报分析（用自然语言，不要模板化）
+
+### 1. 重新归纳问题分类
+- 将上述详细分类合并为**5-8个大类**
+- 输出格式：{{"大类名": 百分比}}
+- 百分比之和为100
+
+### 2. 趋势分析（2-3段纯文字）
+- 从每日会话数看出什么趋势（稳定/波动/增长）
+- 高频问题中哪些值得关注
+- 是否有工作日差异
+- **不要使用引号、方括号等格式符号，直接用自然语言段落**
+
+### 3. 重点风险（合并相似风险，只列实际需要关注的）
+- 说明哪些风险反复出现
+- 哪些未解决需要跟进
+
+### 4. 典型案例（1-2个，从每日摘要中选取代表性案例）
+- **案例描述直接说问题和处理过程，不要提"某XX机构"这种词**
+- 示例："客户反馈软件无法连接数据库..."而不是"某证券机构反馈..."
+
+### 5. 下周改进计划（3-5条具体可执行的行动）
+- 不要空话，要具体
+- 针对高频问题和风险
+
+## 输出格式（纯JSON）：
+{{
+  "weekly_summary": "本周整体情况（2-3段自然语言）",
+  "category_summary": {{"大类1": 百分比, "大类2": 百分比}},
+  "trends": "趋势分析（2-3段纯文字，不要用引号、方括号等格式）",
+  "key_risks": [
+    {{"risk_type": "类型", "description": "描述", "suggestion": "建议"}}
+  ],
+  "cases": [
+    {{"title": "案例标题", "description": "案例描述（不要提机构名称）", "outcome": "处理结果"}}
+  ],
+  "next_week_plan": ["具体行动1", "具体行动2", "具体行动3"]
+}}
+"""
+
+    # ========== 阶段3：调用AI生成周报 ==========
+
+    try:
+        print(f"\n📊 开始生成周报（{start_date} 至 {end_date}）...\n")
+
+        response = await call_ai_api(prompt, system="你是专业的数据分析助手")
+
+        # 清理返回
+        cleaned = response.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+
+        first_brace = cleaned.find('{')
+        last_brace = cleaned.rfind('}')
+        if first_brace != -1 and last_brace != -1:
+            cleaned = cleaned[first_brace:last_brace + 1]
+
+        cleaned = cleaned.replace('"', '"').replace('"', '"')
+
+        result = json.loads(cleaned)
+
+        print(f"\n✅ 周报生成成功\n")
+
+        # 构建返回数据
+        # 使用AI重新归纳的分类（如果有），否则用合并的细分类
+        category_stats = result.get("category_summary", merged_categories)
+
+        return {
+            "keywords_json": dict(top_problems),
+            "category_stats_json": category_stats,
+            "org_distribution_json": {
+                "trends": result.get("trends", ""),
+                "key_risks": result.get("key_risks", []),
+                "cases": result.get("cases", []),
+                "next_week_plan": result.get("next_week_plan", [])
+            },
+            "service_stats_json": dict(service_counter),
+            "daily_trend_json": daily_trend,
+            "ai_summary": result.get("weekly_summary", "")
+        }
+
+    except Exception as e:
+        print(f"\n❌ 周报生成失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+        # 返回基础汇总数据
+        return {
+            "keywords_json": dict(top_problems),
+            "category_stats_json": merged_categories,
+            "org_distribution_json": {},
+            "service_stats_json": dict(service_counter),
+            "daily_trend_json": daily_trend,
+            "ai_summary": f"周报生成失败: {str(e)}"
+        }

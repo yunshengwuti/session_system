@@ -61,7 +61,7 @@ export const reportAPI = {
   },
 
   // 获取周报列表
-  getWeeklyList() {
+  getWeeklyReports() {
     return api.get('/reports/weekly/list')
   },
 
@@ -70,9 +70,14 @@ export const reportAPI = {
     return api.get(`/reports/weekly/${weekStartDate}`)
   },
 
-  // 生成周报
-  createWeeklyReport(weekStartDate) {
-    return api.post(`/reports/weekly?week_start_date=${weekStartDate}`)
+  // 生成周报（新版：支持自定义日期范围）
+  createWeeklyReport(startDate, endDate) {
+    return api.post(`/reports/weekly?start_date=${startDate}&end_date=${endDate}`)
+  },
+
+  // 删除周报
+  deleteWeeklyReport(weekStartDate) {
+    return api.delete(`/reports/weekly/${weekStartDate}`)
   },
 }
 

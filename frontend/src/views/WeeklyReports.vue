@@ -6,14 +6,20 @@
           <span>周报管理</span>
           <div>
             <el-date-picker
-              v-model="selectedWeek"
-              type="week"
-              placeholder="选择周"
-              format="YYYY 第 ww 周"
+              v-model="dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
               value-format="YYYY-MM-DD"
+              :unlink-panels="false"
               style="margin-right: 10px"
+              @change="validateDateRange"
             />
-            <el-button type="primary" @click="generateReport" :loading="generating">
+            <el-text v-if="dateRangeError" type="danger" style="margin-right: 10px; font-size: 12px">
+              {{ dateRangeError }}
+            </el-text>
+            <el-button type="primary" @click="generateReport" :loading="generating" :disabled="!!dateRangeError || !dateRange">
               <el-icon><Plus /></el-icon>
               生成周报
             </el-button>
@@ -23,69 +29,85 @@
 
       <!-- 周报列表 -->
       <el-table v-loading="loading" :data="reports" style="width: 100%">
-        <el-table-column label="周" width="200">
+        <el-table-column label="周期" width="280" align="center">
           <template #default="{ row }">
             {{ row.week_start_date }} 至 {{ row.week_end_date }}
           </template>
         </el-table-column>
-        <el-table-column prop="total_sessions" label="会话总数" width="120" />
-        <el-table-column label="日均会话" width="120">
+        <el-table-column prop="total_sessions" label="总会话数" width="150" align="center" />
+        <el-table-column label="生成时间" width="220" align="center">
           <template #default="{ row }">
-            {{ Math.round(row.total_sessions / 7) }}
+            {{ new Date(row.generated_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column prop="generated_at" label="生成时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" align="center">
           <template #default="{ row }">
-            <el-button type="primary" link @click="viewReport(row)">
-              查看详情
-            </el-button>
-            <el-button type="danger" link @click="deleteReport(row)">
-              删除
-            </el-button>
+            <el-button type="primary" link @click="viewReport(row)">查看详情</el-button>
+            <el-button type="danger" link @click="deleteReport(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- 周报详情对话框 -->
-    <el-dialog
-      v-model="dialogVisible"
-      title="周报详情"
-      width="80%"
-      :close-on-click-modal="false"
-    >
+    <el-dialog v-model="showDetail" :title="`周报详情 (${currentReport?.week_start_date} 至 ${currentReport?.week_end_date})`" width="80%" top="5vh">
       <div v-if="currentReport" class="report-detail">
-        <el-descriptions title="基本信息" :column="2" border>
-          <el-descriptions-item label="周期">
-            {{ currentReport.week_start_date }} 至 {{ currentReport.week_end_date }}
-          </el-descriptions-item>
-          <el-descriptions-item label="会话总数">
-            {{ currentReport.total_sessions }}
-          </el-descriptions-item>
-        </el-descriptions>
 
-        <!-- 每日趋势图 -->
+        <!-- 高频问题TOP10 -->
         <div class="section">
-          <h3>每日会话趋势</h3>
-          <div ref="trendChart" style="width: 100%; height: 300px"></div>
+          <h3>高频问题TOP10</h3>
+          <el-table :data="topProblems" border stripe>
+            <el-table-column type="index" label="排名" width="80" align="center" />
+            <el-table-column prop="problem" label="问题描述" />
+            <el-table-column prop="count" label="累计次数" width="120" align="center" />
+          </el-table>
         </div>
 
-        <!-- 问题分类 -->
+        <!-- 问题业务分类 -->
         <div class="section">
-          <h3>问题分类统计</h3>
+          <h3>问题业务分类</h3>
           <div ref="categoryChart" style="width: 100%; height: 300px"></div>
         </div>
 
-        <!-- AI 总结 -->
-        <div class="section">
-          <h3>本周总结</h3>
-          <el-alert
-            :title="currentReport.ai_summary"
-            type="info"
-            :closable="false"
-            show-icon
-          />
+        <!-- 每日趋势 -->
+        <div class="section" v-if="currentReport.daily_trend_json && currentReport.daily_trend_json.length > 0">
+          <h3>每日趋势</h3>
+          <div ref="trendChart" style="width: 100%; height: 300px"></div>
+        </div>
+
+        <!-- 趋势分析 -->
+        <div class="section" v-if="trends">
+          <h3>趋势分析</h3>
+          <div class="overview-content">{{ trends }}</div>
+        </div>
+
+        <!-- 重点风险 -->
+        <div class="section" v-if="keyRisks.length > 0">
+          <h3>重点风险</h3>
+          <el-table :data="keyRisks" border>
+            <el-table-column prop="risk_type" label="风险类型" width="150" />
+            <el-table-column prop="description" label="问题描述" />
+            <el-table-column prop="suggestion" label="建议" width="200" />
+          </el-table>
+        </div>
+
+        <!-- 典型案例 -->
+        <div class="section" v-if="cases.length > 0">
+          <h3>典型案例</h3>
+          <div v-for="(caseItem, index) in cases" :key="index" class="case-item">
+            <div class="case-title">{{ caseItem.title }}</div>
+            <div class="case-description">{{ caseItem.description }}</div>
+            <div class="case-outcome" v-if="caseItem.outcome">处理结果：{{ caseItem.outcome }}</div>
+          </div>
+        </div>
+
+        <!-- 下周改进计划 -->
+        <div class="section" v-if="nextWeekPlan.length > 0">
+          <h3>下周改进计划</h3>
+          <div v-for="(plan, index) in nextWeekPlan" :key="index" class="plan-item">
+            <span class="plan-number">{{ index + 1 }}</span>
+            <span class="plan-text">{{ plan }}</span>
+          </div>
         </div>
       </div>
     </el-dialog>
@@ -93,27 +115,49 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
-import { reportAPI } from '../api'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+import { reportAPI } from '@/api/index'
 
+const dateRange = ref(null)
+const dateRangeError = ref('')
 const loading = ref(false)
 const generating = ref(false)
 const reports = ref([])
-const selectedWeek = ref('')
-const dialogVisible = ref(false)
 const currentReport = ref(null)
-
-const trendChart = ref(null)
+const showDetail = ref(false)
 const categoryChart = ref(null)
+const trendChart = ref(null)
 
+// 验证日期范围（3-7天）
+const validateDateRange = () => {
+  if (!dateRange.value || dateRange.value.length !== 2) {
+    dateRangeError.value = ''
+    return
+  }
+
+  const [start, end] = dateRange.value
+  const startDate = new Date(start)
+  const endDate = new Date(end)
+  const daysDiff = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1
+
+  if (daysDiff < 3) {
+    dateRangeError.value = '时间段至少需要3天'
+  } else if (daysDiff > 7) {
+    dateRangeError.value = '时间段最多7天'
+  } else {
+    dateRangeError.value = ''
+  }
+}
+
+// 加载周报列表
 const loadReports = async () => {
   loading.value = true
   try {
-    const data = await reportAPI.getWeeklyList()
-    reports.value = data.reports || []
+    const data = await reportAPI.getWeeklyReports()
+    reports.value = data
   } catch (error) {
     ElMessage.error('加载周报列表失败')
     console.error(error)
@@ -122,25 +166,46 @@ const loadReports = async () => {
   }
 }
 
+// 生成周报
 const generateReport = async () => {
-  if (!selectedWeek.value) {
-    ElMessage.warning('请选择周')
+  if (!dateRange.value || dateRange.value.length !== 2) {
+    ElMessage.warning('请选择日期范围')
     return
   }
 
+  if (dateRangeError.value) {
+    ElMessage.warning(dateRangeError.value)
+    return
+  }
+
+  const [startDate, endDate] = dateRange.value
+
   generating.value = true
   try {
-    await reportAPI.createWeeklyReport(selectedWeek.value)
-    ElMessage.success('周报生成成功')
-    loadReports()
+    await reportAPI.createWeeklyReport(startDate, endDate)
+    ElMessage.success('周报生成成功（可能需要几分钟，请耐心等待）')
+    // 等待1秒确保数据已写入数据库
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    await loadReports()
   } catch (error) {
-    ElMessage.error('周报生成失败')
+    ElMessage.error(error.response?.data?.detail || '周报生成失败')
     console.error(error)
   } finally {
     generating.value = false
   }
 }
 
+// 查看周报详情
+const viewReport = async (row) => {
+  currentReport.value = row
+  showDetail.value = true
+
+  await nextTick()
+  renderCategoryChart()
+  renderTrendChart()
+}
+
+// 删除周报
 const deleteReport = async (row) => {
   try {
     await ElMessageBox.confirm('确定要删除这份周报吗？', '提示', {
@@ -160,70 +225,115 @@ const deleteReport = async (row) => {
   }
 }
 
-const viewReport = async (row) => {
-  try {
-    const data = await reportAPI.getWeeklyReport(row.week_start_date)
-    currentReport.value = data
-    dialogVisible.value = true
+// 计算属性
+const dailyAvg = computed(() => {
+  if (!currentReport.value) return 0
+  const days = reportDays.value
+  return days > 0 ? (currentReport.value.total_sessions / days).toFixed(1) : 0
+})
 
-    await nextTick()
-    renderCharts()
-  } catch (error) {
-    ElMessage.error('加载周报详情失败')
-    console.error(error)
-  }
-}
+const reportDays = computed(() => {
+  if (!currentReport.value) return 0
+  return currentReport.value.daily_trend_json?.length || 0
+})
 
-const renderCharts = () => {
-  if (!currentReport.value) return
+const topProblems = computed(() => {
+  if (!currentReport.value?.keywords_json) return []
+  return Object.entries(currentReport.value.keywords_json)
+    .map(([problem, count]) => ({ problem, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
+})
 
-  // 每日趋势折线图
-  if (trendChart.value && currentReport.value.daily_trend_json) {
-    const chart = echarts.init(trendChart.value)
-    const trend = currentReport.value.daily_trend_json || []
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      xAxis: {
-        type: 'category',
-        data: trend.map(item => item.date)
-      },
-      yAxis: { type: 'value' },
-      series: [
-        {
-          type: 'line',
-          data: trend.map(item => item.sessions),
-          smooth: true,
-          itemStyle: { color: '#409eff' }
-        }
-      ]
-    })
-  }
+const trends = computed(() => {
+  return currentReport.value?.org_distribution_json?.trends || ''
+})
 
-  // 问题分类饼图
-  if (categoryChart.value) {
-    const chart = echarts.init(categoryChart.value)
-    const data = Object.entries(currentReport.value.category_stats_json || {}).map(
-      ([name, value]) => ({ name, value })
-    )
-    chart.setOption({
-      tooltip: { trigger: 'item' },
-      legend: { orient: 'vertical', left: 'left' },
-      series: [
-        {
-          type: 'pie',
-          radius: '50%',
-          data,
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowOffsetX: 0,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
-            }
+const keyRisks = computed(() => {
+  return currentReport.value?.org_distribution_json?.key_risks || []
+})
+
+const cases = computed(() => {
+  return currentReport.value?.org_distribution_json?.cases || []
+})
+
+const nextWeekPlan = computed(() => {
+  return currentReport.value?.org_distribution_json?.next_week_plan || []
+})
+
+// 渲染分类饼图
+const renderCategoryChart = () => {
+  if (!categoryChart.value || !currentReport.value?.category_stats_json) return
+
+  const chart = echarts.init(categoryChart.value)
+  const data = Object.entries(currentReport.value.category_stats_json).map(
+    ([name, value]) => ({ name, value })
+  )
+
+  chart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c}% ({d}%)' },
+    legend: { orient: 'vertical', left: 'left' },
+    series: [
+      {
+        type: 'pie',
+        radius: '50%',
+        data,
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.5)'
           }
         }
-      ]
-    })
+      }
+    ]
+  })
+}
+
+// 渲染趋势折线图
+const renderTrendChart = () => {
+  if (!trendChart.value || !currentReport.value?.daily_trend_json) return
+
+  const chart = echarts.init(trendChart.value)
+  const trendData = currentReport.value.daily_trend_json
+
+  // 获取星期
+  const getWeekday = (dateStr) => {
+    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const date = new Date(dateStr)
+    return weekdays[date.getDay()]
   }
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const data = params[0]
+        const dateStr = trendData[data.dataIndex].date
+        const weekday = getWeekday(dateStr)
+        return `${dateStr} (${weekday})<br/>会话数: ${data.value}`
+      }
+    },
+    xAxis: {
+      type: 'category',
+      data: trendData.map(d => `${d.date}\n${getWeekday(d.date)}`),
+      axisLabel: {
+        rotate: 0,
+        interval: 0,
+        fontSize: 11
+      }
+    },
+    yAxis: { type: 'value', name: '会话数' },
+    series: [
+      {
+        type: 'line',
+        data: trendData.map(d => d.sessions),
+        smooth: true,
+        itemStyle: { color: '#409EFF' },
+        areaStyle: { color: 'rgba(64, 158, 255, 0.2)' }
+      }
+    ]
+  })
 }
 
 onMounted(() => {
@@ -251,8 +361,105 @@ onMounted(() => {
   margin-top: 30px;
 }
 
+.section:first-child {
+  margin-top: 0;
+}
+
 .section h3 {
   margin-bottom: 15px;
   color: #303133;
+  font-size: 18px;
+  font-weight: bold;
 }
+
+.overview-content {
+  line-height: 1.8;
+  white-space: pre-wrap;
+  padding: 15px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+/* 典型案例样式 */
+.case-item {
+  padding: 15px;
+  margin-bottom: 15px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  border-left: 4px solid #409EFF;
+}
+
+.case-title {
+  font-weight: bold;
+  font-size: 16px;
+  color: #303133;
+  margin-bottom: 10px;
+}
+
+.case-description {
+  line-height: 1.8;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.case-outcome {
+  color: #67C23A;
+  font-size: 14px;
+}
+
+/* 改进计划样式 */
+.plan-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 15px;
+  margin-bottom: 10px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.plan-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  background-color: #409EFF;
+  color: white;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: bold;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.plan-text {
+  line-height: 1.8;
+  color: #303133;
+  flex: 1;
+}
+
+/* 日历中周末样式 */
+/* 周六（每行第7列）和周日（每行第1列）背景色 */
+:deep(.el-date-table tr td:first-child:not(.prev-month):not(.next-month) .el-date-table-cell__text),
+:deep(.el-date-table tr td:last-child:not(.prev-month):not(.next-month) .el-date-table-cell__text) {
+  color: #C0C4CC !important;
+}
+
+:deep(.el-date-table tr td:first-child:not(.prev-month):not(.next-month)),
+:deep(.el-date-table tr td:last-child:not(.prev-month):not(.next-month)) {
+  background-color: #f5f7fa !important;
+}
+
+/* 周末单元格 */
+:deep(.el-date-table tr td:first-child .el-date-table-cell),
+:deep(.el-date-table tr td:last-child .el-date-table-cell) {
+  background-color: #fafafa;
+}
+
+/* 周末选中范围内也保持区分 */
+:deep(.el-date-table tr td.in-range:first-child .el-date-table-cell),
+:deep(.el-date-table tr td.in-range:last-child .el-date-table-cell) {
+  background-color: #f0f0f0 !important;
+}
+
 </style>
