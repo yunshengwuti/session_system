@@ -75,12 +75,6 @@
           <div ref="trendChart" style="width: 100%; height: 300px"></div>
         </div>
 
-        <!-- 趋势分析 -->
-        <div class="section" v-if="trends">
-          <h3>趋势分析</h3>
-          <div class="overview-content">{{ trends }}</div>
-        </div>
-
         <!-- 重点风险 -->
         <div class="section" v-if="keyRisks.length > 0">
           <h3>重点风险</h3>

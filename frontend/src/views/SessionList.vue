@@ -12,52 +12,56 @@
       </template>
 
       <!-- 筛选条件 -->
-      <el-form :inline="true" class="filter-form">
-        <el-form-item label="日期">
-          <el-date-picker
-            v-model="filters.date"
-            type="date"
-            placeholder="选择日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-            @change="loadSessions"
-          />
-        </el-form-item>
-        <el-form-item label="客户名称">
-          <el-input
-            v-model="filters.customer"
-            placeholder="输入客户名称"
-            clearable
-            @clear="loadSessions"
-            @keyup.enter="loadSessions"
-            style="width: 200px"
-          />
-        </el-form-item>
-        <el-form-item label="机构名称">
-          <el-input
-            v-model="filters.org"
-            placeholder="输入机构名称"
-            clearable
-            @clear="loadSessions"
-            @keyup.enter="loadSessions"
-            style="width: 200px"
-          />
-        </el-form-item>
-        <el-form-item label="客服">
-          <el-input
-            v-model="filters.service"
-            placeholder="输入客服名称"
-            clearable
-            @clear="loadSessions"
-            @keyup.enter="loadSessions"
-            style="width: 180px"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="loadSessions">查询</el-button>
-          <el-button @click="resetFilters">重置</el-button>
-        </el-form-item>
-      </el-form>
+      <div class="filter-container">
+        <div class="filter-row">
+          <el-form :inline="true" class="filter-form">
+            <el-form-item label="日期">
+              <el-date-picker
+                v-model="filters.dateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="YYYY-MM-DD"
+                :unlink-panels="false"
+                style="width: 260px"
+              />
+            </el-form-item>
+            <el-form-item label="客户名称">
+              <el-input
+                v-model="filters.customer"
+                placeholder="输入客户名称"
+                clearable
+                style="width: 150px"
+              />
+            </el-form-item>
+            <el-form-item label="机构名称">
+              <el-input
+                v-model="filters.org"
+                placeholder="输入机构名称"
+                clearable
+                style="width: 150px"
+              />
+            </el-form-item>
+          </el-form>
+        </div>
+        <div class="filter-row-second">
+          <el-form :inline="true" class="filter-form-left">
+            <el-form-item label="客服">
+              <el-input
+                v-model="filters.service"
+                placeholder="输入客服名称"
+                clearable
+                style="width: 150px"
+              />
+            </el-form-item>
+          </el-form>
+          <div class="filter-actions-center">
+            <el-button type="primary" @click="handleSearch">查询</el-button>
+            <el-button @click="resetFilters">重置</el-button>
+          </div>
+        </div>
+      </div>
 
       <!-- 会话表格 -->
       <el-table
@@ -124,7 +128,7 @@ const getTodayDate = () => {
 }
 
 const filters = reactive({
-  date: '',
+  dateRange: null,  // 改为日期范围
   customer: '',
   org: '',
   service: ''
@@ -142,6 +146,12 @@ const stats = reactive({
   avgDuration: 0
 })
 
+// 点击查询按钮
+const handleSearch = () => {
+  pagination.page = 1  // 重置到第一页
+  loadSessions()
+}
+
 // 加载会话列表
 const loadSessions = async () => {
   loading.value = true
@@ -152,7 +162,10 @@ const loadSessions = async () => {
     }
 
     // 只添加有值的筛选参数
-    if (filters.date) params.session_date = filters.date
+    if (filters.dateRange && filters.dateRange.length === 2) {
+      params.start_date = filters.dateRange[0]
+      params.end_date = filters.dateRange[1]
+    }
     if (filters.customer) params.customer_name = filters.customer
     if (filters.org) params.org_name = filters.org
     if (filters.service) params.customer_service = filters.service
@@ -174,7 +187,7 @@ const loadSessions = async () => {
 
 // 重置筛选
 const resetFilters = () => {
-  filters.date = getTodayDate()
+  filters.dateRange = null
   filters.customer = ''
   filters.org = ''
   filters.service = ''
@@ -212,11 +225,56 @@ onMounted(() => {
   align-items: center;
 }
 
-.filter-form {
+.filter-container {
   margin-bottom: 20px;
+  position: relative;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.filter-row-second {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.filter-form {
+  margin: 0;
+}
+
+.filter-form-left {
+  margin: 0;
+}
+
+.filter-actions-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
 }
 
 .stats-row {
   margin: 20px 0;
+}
+
+/* 日历中周末样式 */
+:deep(.el-date-table tr td:first-child .el-date-table-cell),
+:deep(.el-date-table tr td:last-child .el-date-table-cell) {
+  background-color: #fafafa;
+}
+
+:deep(.el-date-table tr td:first-child:not(.prev-month):not(.next-month) .el-date-table-cell__text),
+:deep(.el-date-table tr td:last-child:not(.prev-month):not(.next-month) .el-date-table-cell__text) {
+  color: #C0C4CC !important;
+}
+
+:deep(.el-date-table tr td.in-range:first-child .el-date-table-cell),
+:deep(.el-date-table tr td.in-range:last-child .el-date-table-cell) {
+  background-color: #f0f0f0 !important;
 }
 </style>
