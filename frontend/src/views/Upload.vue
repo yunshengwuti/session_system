@@ -100,7 +100,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Upload } from '@element-plus/icons-vue'
-import axios from 'axios'
+import { uploadAPI } from '../api'
 
 const router = useRouter()
 const currentStep = ref(0)
@@ -147,15 +147,13 @@ const startUpload = async () => {
       }
     }, 300)
 
-    const response = await axios.post('http://localhost:8000/api/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    const response = await uploadAPI.upload(formData)
 
     clearInterval(progressInterval)
     uploadProgress.value = 100
-    uploadMessage.value = response.data.message || '导入成功'
+    uploadMessage.value = response.message || '导入成功'
     uploadSuccess.value = true
-    uploadResult.value = response.data
+    uploadResult.value = response
 
     setTimeout(() => {
       currentStep.value = 2
