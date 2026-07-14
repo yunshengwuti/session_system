@@ -289,7 +289,7 @@ onMounted(() => {
 }
 
 .danger-zone {
-  padding: 18px;
+  padding: 18px 70px;
   background: #fef0f0;
   border: 1px solid #fde2e2;
   border-radius: 6px;
@@ -299,7 +299,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 0 12px 52px;
+  margin: 0 0 12px 0;
 }
 
 .danger-title {
@@ -330,7 +330,7 @@ onMounted(() => {
 }
 
 .danger-text {
-  margin-left: 52px;
+  margin-left: 0;
   color: #c45656;
   font-size: 13px;
   line-height: 1.5;
@@ -342,7 +342,7 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 14px;
-  padding-right: 52px;
+  padding-right: 0;
 }
 
 @media (max-width: 900px) {
@@ -353,6 +353,10 @@ onMounted(() => {
 
   .count-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .danger-zone {
+    padding: 18px;
   }
 
   .danger-topline {
