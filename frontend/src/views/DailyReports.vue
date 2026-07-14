@@ -105,14 +105,14 @@
         <!-- 行动建议 -->
         <div class="section" v-if="suggestions.length > 0">
           <h3>行动建议</h3>
-          <el-timeline>
+          <el-timeline class="action-timeline">
             <el-timeline-item
               v-for="(suggestion, index) in suggestions"
               :key="index"
               :timestamp="'建议' + (index + 1)"
               placement="top"
             >
-              {{ suggestion }}
+              <div class="suggestion-content">{{ suggestion }}</div>
             </el-timeline-item>
           </el-timeline>
         </div>
@@ -360,8 +360,49 @@ onMounted(() => {
 }
 
 .summary-card {
+
   background: #ecf5ff;
   border: 1px solid #d9ecff;
   line-height: 1.8;
+}
+/* 保持原时间线风格，将建议内容约束到居中的阅读列。 */
+.action-timeline {
+  box-sizing: border-box;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 16px;
+  text-align: left;
+}
+
+.action-timeline :deep(.el-timeline-item) {
+  padding-bottom: 24px;
+}
+
+.action-timeline :deep(.el-timeline-item:last-child) {
+  padding-bottom: 0;
+}
+
+.action-timeline :deep(.el-timeline-item__wrapper) {
+  padding-left: 24px;
+}
+
+.action-timeline :deep(.el-timeline-item__timestamp) {
+  margin-bottom: 6px;
+  color: #909399;
+  line-height: 1.4;
+}
+
+.suggestion-content {
+  max-width: 680px;
+  color: #303133;
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .action-timeline {
+    max-width: none;
+    padding: 0 8px;
+  }
 }
 </style>
