@@ -11,53 +11,47 @@
         </div>
       </template>
 
-      <div class="storage-section">
-        <div class="section-title centered-title">数据库容量</div>
-        <div class="storage-summary">
-          <div class="storage-number">
-            {{ storage.used_mb }} MB
-            <span>/ {{ storage.limit_mb }} MB</span>
+      <div class="management-panel">
+        <div class="section-block">
+          <div class="section-title centered-title">数据库容量</div>
+          <div class="storage-summary">
+            <div class="storage-number">
+              {{ storage.used_mb }} MB
+              <span>/ {{ storage.limit_mb }} MB</span>
+            </div>
+            <el-progress :percentage="storagePercent" :status="storageStatus" />
+            <div class="storage-meta">
+              <span>使用率 {{ storage.used_percent }}%</span>
+              <span>数据库类型 {{ storage.dialect || '-' }}</span>
+            </div>
           </div>
-          <el-progress :percentage="storagePercent" :status="storageStatus" />
-          <div class="storage-meta">
-            <span>使用率 {{ storage.used_percent }}%</span>
-            <span>数据库类型 {{ storage.dialect || '-' }}</span>
+        </div>
+
+        <div class="section-block">
+          <div class="section-title centered-title">当前数据</div>
+          <div class="count-grid">
+            <div class="count-item">
+              <div class="count-value">{{ counts.sessions }}</div>
+              <div class="count-label">会话</div>
+            </div>
+            <div class="count-item">
+              <div class="count-value">{{ counts.messages }}</div>
+              <div class="count-label">消息</div>
+            </div>
+            <div class="count-item">
+              <div class="count-value">{{ counts.daily_reports }}</div>
+              <div class="count-label">日报</div>
+            </div>
+            <div class="count-item">
+              <div class="count-value">{{ counts.weekly_reports }}</div>
+              <div class="count-label">周报</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="section-title centered-title">当前数据</div>
-      <div class="count-grid">
-        <div class="count-item">
-          <div class="count-value">{{ counts.sessions }}</div>
-          <div class="count-label">会话</div>
-        </div>
-        <div class="count-item">
-          <div class="count-value">{{ counts.messages }}</div>
-          <div class="count-label">消息</div>
-        </div>
-        <div class="count-item">
-          <div class="count-value">{{ counts.daily_reports }}</div>
-          <div class="count-label">日报</div>
-        </div>
-        <div class="count-item">
-          <div class="count-value">{{ counts.weekly_reports }}</div>
-          <div class="count-label">周报</div>
-        </div>
-        <div class="count-item">
-          <div class="count-value">{{ counts.report_tasks }}</div>
-          <div class="count-label">生成任务</div>
-        </div>
-      </div>
-
-      <div class="danger-zone">
-        <div class="danger-main">
-          <div class="section-title danger-title">按日期清除</div>
-          <div class="danger-text">
-            选择日期范围后，会清除范围内的会话、消息、日报、重叠周报和相关生成任务记录。这个操作不可撤销。
-          </div>
-
-          <div class="cleanup-form">
+        <div class="danger-zone">
+          <div class="danger-topline">
+            <div class="section-title danger-title">按日期范围清除</div>
             <el-date-picker
               v-model="cleanupRange"
               type="daterange"
@@ -69,15 +63,20 @@
             />
           </div>
 
-          <div v-if="preview" class="preview-box">
-            将删除 {{ preview.start_date }} 至 {{ preview.end_date }}：{{ preview.counts.sessions }} 条会话、{{ preview.counts.messages }} 条消息、{{ preview.counts.daily_reports }} 份日报、{{ preview.counts.weekly_reports }} 份周报、{{ preview.counts.report_tasks }} 条任务记录。
+          <div class="danger-text">
+            会清除所选日期范围内的会话、消息、日报、重叠周报和相关生成任务记录。此操作不可撤销。
           </div>
-        </div>
-        <div class="danger-actions">
-          <el-button @click="previewCleanup" :loading="previewing">预览清除影响</el-button>
-          <el-button type="danger" @click="clearRange" :loading="clearing" :disabled="!preview">
-            清除所选范围
-          </el-button>
+
+          <div class="danger-actions">
+            <el-button @click="previewCleanup" :loading="previewing">预览清除影响</el-button>
+            <el-button type="danger" @click="clearRange" :loading="clearing" :disabled="!preview">
+              清除数据
+            </el-button>
+          </div>
+
+          <div v-if="preview" class="preview-box">
+            将删除 {{ preview.start_date }} 至 {{ preview.end_date }}：{{ preview.counts.sessions }} 条会话、{{ preview.counts.messages }} 条消息、{{ preview.counts.daily_reports }} 份日报、{{ preview.counts.weekly_reports }} 份周报。
+          </div>
         </div>
       </div>
     </el-card>
@@ -221,8 +220,13 @@ onMounted(() => {
   align-items: center;
 }
 
-.storage-section {
-  margin-bottom: 28px;
+.management-panel {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.section-block {
+  margin-bottom: 30px;
 }
 
 .section-title {
@@ -237,8 +241,6 @@ onMounted(() => {
 }
 
 .storage-summary {
-  max-width: 680px;
-  margin: 0 auto;
   padding: 18px;
   background: #f5f7fa;
   border: 1px solid #ebeef5;
@@ -269,9 +271,8 @@ onMounted(() => {
 
 .count-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 30px;
 }
 
 .count-item {
@@ -295,22 +296,28 @@ onMounted(() => {
 }
 
 .danger-zone {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
   padding: 18px;
   background: #fef0f0;
   border: 1px solid #fde2e2;
   border-radius: 6px;
 }
 
-.danger-main {
-  min-width: 0;
-  flex: 1;
+.danger-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
 }
 
 .danger-title {
+  margin-bottom: 0;
   color: #c45656;
+}
+
+.danger-topline :deep(.el-date-editor) {
+  width: 320px;
+  max-width: 100%;
 }
 
 .danger-text {
@@ -318,30 +325,25 @@ onMounted(() => {
   line-height: 1.7;
 }
 
-.cleanup-form {
+.danger-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 14px;
 }
 
-.cleanup-form :deep(.el-date-editor) {
-  width: 320px;
-  max-width: 100%;
-}
-
 .preview-box {
-  margin-top: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
   color: #c45656;
   line-height: 1.7;
-}
-
-.danger-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid #fde2e2;
+  border-radius: 6px;
 }
 
 @media (max-width: 900px) {
-  .data-management {
+  .data-management,
+  .management-panel {
     max-width: none;
   }
 
@@ -349,12 +351,13 @@ onMounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .danger-zone {
+  .danger-topline {
+    align-items: flex-start;
     flex-direction: column;
   }
 
   .danger-actions {
-    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 </style>
