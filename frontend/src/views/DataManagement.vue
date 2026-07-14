@@ -304,25 +304,45 @@ onMounted(() => {
 
 .danger-topline {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin: 0 0 12px 40px;
 }
 
 .danger-title {
+  flex: none;
   margin-bottom: 0;
   color: #606266;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 32px;
 }
 
 .danger-topline :deep(.el-date-editor.el-input__wrapper),
+.danger-topline :deep(.el-date-editor--daterange.el-input__wrapper),
 .danger-topline :deep(.el-date-editor) {
-  width: 160px !important;
-  max-width: 160px !important;
-  min-width: 160px !important;
+  flex: none;
+  width: 210px !important;
+  max-width: 210px !important;
+  min-width: 210px !important;
+}
+
+.danger-topline :deep(.el-range-input) {
+  width: 72px;
+  font-size: 12px;
+}
+
+.danger-topline :deep(.el-range-input::placeholder) {
+  font-size: 12px;
+}
+
+.danger-topline :deep(.el-range-separator) {
+  flex: 0 0 18px;
+  padding: 0;
 }
 
 .danger-text {
+  margin-left: 52px;
   color: #c45656;
   font-size: 13px;
   line-height: 1.5;
@@ -359,6 +379,12 @@ onMounted(() => {
   .danger-topline {
     align-items: flex-start;
     flex-direction: column;
+    margin-left: 0;
+  }
+
+  .danger-text {
+    margin-left: 0;
+    white-space: normal;
   }
 
   .danger-actions {
