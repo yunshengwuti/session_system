@@ -64,7 +64,7 @@
           </div>
 
           <div class="danger-text">
-            会清除所选日期范围内的会话、消息、日报、重叠周报和相关生成任务记录。此操作不可撤销。
+            注意：会清除所选日期范围内的会话、消息、日报、重叠周报和相关生成任务记录。此操作不可撤销。
           </div>
 
           <div class="danger-actions">
@@ -312,21 +312,24 @@ onMounted(() => {
 
 .danger-title {
   margin-bottom: 0;
-  color: #c45656;
+  color: #303133;
 }
 
 .danger-topline :deep(.el-date-editor) {
-  width: 320px;
+  width: 160px;
   max-width: 100%;
 }
 
 .danger-text {
-  color: #606266;
-  line-height: 1.7;
+  color: #c45656;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .danger-actions {
   display: flex;
+  justify-content: center;
   gap: 10px;
   margin-top: 14px;
 }
