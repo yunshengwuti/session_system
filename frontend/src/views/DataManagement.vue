@@ -64,18 +64,11 @@
           </div>
 
           <div class="danger-text">
-            注意：会清除所选日期范围内的会话、消息、日报、重叠周报和相关生成任务记录。此操作不可撤销。
+            注意：会清除所选日期范围内的会话、消息、日报、周报和相关生成任务记录。此操作不可撤销。
           </div>
 
           <div class="danger-actions">
-            <el-button @click="previewCleanup" :loading="previewing">预览清除影响</el-button>
-            <el-button type="danger" @click="clearRange" :loading="clearing" :disabled="!preview">
-              清除数据
-            </el-button>
-          </div>
-
-          <div v-if="preview" class="preview-box">
-            将删除 {{ preview.start_date }} 至 {{ preview.end_date }}：{{ preview.counts.sessions }} 条会话、{{ preview.counts.messages }} 条消息、{{ preview.counts.daily_reports }} 份日报、{{ preview.counts.weekly_reports }} 份周报。
+            <el-button type="danger" @click="clearRange" :loading="clearing">清除数据</el-button>
           </div>
         </div>
       </div>
@@ -84,15 +77,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { managementAPI } from '../api'
 
 const loading = ref(false)
-const previewing = ref(false)
 const clearing = ref(false)
-const preview = ref(null)
 const cleanupRange = ref(null)
 
 const storage = reactive({
@@ -143,65 +134,67 @@ const loadOverview = async () => {
   }
 }
 
-const previewCleanup = async () => {
+const clearRange = async () => {
   if (!selectedRange.value) {
     ElMessage.warning('请选择清除日期范围')
     return
   }
 
-  previewing.value = true
+  clearing.value = true
+  let cleanupPreview
   try {
-    preview.value = await managementAPI.previewCleanup(
+    cleanupPreview = await managementAPI.previewCleanup(
       selectedRange.value.startDate,
       selectedRange.value.endDate
     )
   } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '预览清除影响失败')
+    ElMessage.error(error.response?.data?.detail || '获取清除影响失败')
     console.error(error)
-  } finally {
-    previewing.value = false
+    clearing.value = false
+    return
   }
-}
+  clearing.value = false
 
-const clearRange = async () => {
-  if (!preview.value || !selectedRange.value) {
-    ElMessage.warning('请先预览清除影响')
+  const previewCounts = cleanupPreview.counts || {}
+  const confirmMessage = [
+    '<div style="line-height: 1.8;">',
+    '<div>清除范围：' + cleanupPreview.start_date + ' 至 ' + cleanupPreview.end_date + '</div>',
+    '<div>将删除：' + (previewCounts.sessions || 0) + ' 条会话、' +
+      (previewCounts.messages || 0) + ' 条消息、' +
+      (previewCounts.daily_reports || 0) + ' 份日报、' +
+      (previewCounts.weekly_reports || 0) + ' 份周报。</div>',
+    '<div style="margin-top: 8px; color: #c45656;">此操作不可撤销。</div>',
+    '</div>'
+  ].join('')
+
+  try {
+    await ElMessageBox.confirm(confirmMessage, '清除影响', {
+      confirmButtonText: '确认',
+      cancelButtonText: '返回',
+      type: 'warning',
+      dangerouslyUseHTMLString: true,
+      confirmButtonClass: 'el-button--danger'
+    })
+  } catch {
     return
   }
 
+  clearing.value = true
   try {
-    await ElMessageBox.confirm(
-      `确认清除 ${selectedRange.value.startDate} 至 ${selectedRange.value.endDate} 的数据？这个操作不可撤销。`,
-      '危险操作',
-      {
-        confirmButtonText: '确认清除',
-        cancelButtonText: '取消',
-        type: 'warning',
-        confirmButtonClass: 'el-button--danger'
-      }
-    )
-
-    clearing.value = true
     const result = await managementAPI.clearRange(
       selectedRange.value.startDate,
       selectedRange.value.endDate
     )
     ElMessage.success(result.message || '数据已清除')
-    preview.value = null
+    cleanupRange.value = null
     applyOverview(result)
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.detail || '清除失败')
-      console.error(error)
-    }
+    ElMessage.error(error.response?.data?.detail || '清除失败')
+    console.error(error)
   } finally {
     clearing.value = false
   }
 }
-
-watch(cleanupRange, () => {
-  preview.value = null
-})
 
 onMounted(() => {
   loadOverview()
@@ -306,7 +299,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 0 12px 40px;
+  margin: 0 0 12px 52px;
 }
 
 .danger-title {
@@ -322,18 +315,13 @@ onMounted(() => {
 .danger-topline :deep(.el-date-editor--daterange.el-input__wrapper),
 .danger-topline :deep(.el-date-editor) {
   flex: none;
-  width: 210px !important;
-  max-width: 210px !important;
-  min-width: 210px !important;
+  width: 240px !important;
+  max-width: 240px !important;
+  min-width: 240px !important;
 }
 
 .danger-topline :deep(.el-range-input) {
-  width: 72px;
-  font-size: 12px;
-}
-
-.danger-topline :deep(.el-range-input::placeholder) {
-  font-size: 12px;
+  width: 84px;
 }
 
 .danger-topline :deep(.el-range-separator) {
@@ -351,19 +339,10 @@ onMounted(() => {
 
 .danger-actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 10px;
   margin-top: 14px;
-}
-
-.preview-box {
-  margin-top: 14px;
-  padding: 12px 14px;
-  color: #c45656;
-  line-height: 1.7;
-  background: #fff;
-  border: 1px solid #fde2e2;
-  border-radius: 6px;
+  padding-right: 52px;
 }
 
 @media (max-width: 900px) {
@@ -389,6 +368,8 @@ onMounted(() => {
 
   .danger-actions {
     flex-wrap: wrap;
+    justify-content: flex-start;
+    padding-right: 0;
   }
 }
 </style>
