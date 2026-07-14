@@ -312,12 +312,14 @@ onMounted(() => {
 
 .danger-title {
   margin-bottom: 0;
-  color: #303133;
+  color: #606266;
 }
 
+.danger-topline :deep(.el-date-editor.el-input__wrapper),
 .danger-topline :deep(.el-date-editor) {
-  width: 160px;
-  max-width: 100%;
+  width: 160px !important;
+  max-width: 160px !important;
+  min-width: 160px !important;
 }
 
 .danger-text {
