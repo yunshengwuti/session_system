@@ -8,6 +8,7 @@ from config.database import init_db
 from api.sessions import router as sessions_router
 from api.upload import router as upload_router
 from api.reports import router as reports_router
+from api.management import router as management_router
 
 app = FastAPI(
     title="会话数据管理系统",
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(sessions_router)
 app.include_router(upload_router)
 app.include_router(reports_router)
+app.include_router(management_router)
 
 
 @app.on_event("startup")

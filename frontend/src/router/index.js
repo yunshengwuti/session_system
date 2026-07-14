@@ -12,6 +12,12 @@ const routes = [
     meta: { title: '会话列表' }
   },
   {
+    path: '/management',
+    name: 'DataManagement',
+    component: () => import('../views/DataManagement.vue'),
+    meta: { title: '数据管理' }
+  },
+  {
     path: '/sessions/:id',
     name: 'SessionDetail',
     component: () => import('../views/SessionDetail.vue'),

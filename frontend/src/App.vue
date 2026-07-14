@@ -25,6 +25,10 @@
             <el-icon><Upload /></el-icon>
             <span>数据上传</span>
           </el-menu-item>
+          <el-menu-item index="/management">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>数据管理</span>
+          </el-menu-item>
         </el-menu>
       </div>
     </el-header>
@@ -36,7 +40,7 @@
 </template>
 
 <script setup>
-import { ChatDotRound, Document, Calendar, Upload } from '@element-plus/icons-vue'
+import { ChatDotRound, DataAnalysis, Document, Calendar, Upload } from '@element-plus/icons-vue'
 </script>
 
 <style scoped>

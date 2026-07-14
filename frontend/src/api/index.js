@@ -1,15 +1,30 @@
 import axios from 'axios'
 
+const DEFAULT_TIMEOUT = 60000
+const RETRY_DELAY = 3000
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
 // 创建 axios 实例
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
-  timeout: 30000,
+  timeout: DEFAULT_TIMEOUT,
 })
 
 // 响应拦截器
 api.interceptors.response.use(
   response => response.data,
-  error => {
+  async error => {
+    const config = error.config || {}
+    const isGet = (config.method || 'get').toLowerCase() === 'get'
+    const isRetryable = !error.response || error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK'
+
+    if (isGet && isRetryable && !config.__retried) {
+      config.__retried = true
+      await wait(RETRY_DELAY)
+      return api(config)
+    }
+
     console.error('API Error:', error)
     return Promise.reject(error)
   }
@@ -25,6 +40,23 @@ export const sessionAPI = {
   // 获取会话详情
   getDetail(sessionId) {
     return api.get(`/sessions/${sessionId}`)
+  },
+}
+
+// 数据管理接口
+export const managementAPI = {
+  getStorage() {
+    return api.get('/management/storage')
+  },
+
+  previewCleanup() {
+    return api.get('/management/cleanup/preview')
+  },
+
+  clearAll() {
+    return api.delete('/management/cleanup/all', {
+      params: { confirm: 'CLEAR_ALL' }
+    })
   },
 }
 
