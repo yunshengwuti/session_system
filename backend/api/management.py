@@ -2,7 +2,8 @@
 数据管理 API
 """
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session as DBSession
 
@@ -12,6 +13,26 @@ from models.database import Session, Message, DailyReport, WeeklyReport, ReportT
 router = APIRouter(prefix="/api/management", tags=["数据管理"])
 
 
+def validate_range(start_date: date, end_date: date) -> None:
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
+
+
+def task_in_range(task: ReportTask, start_date: date, end_date: date) -> bool:
+    try:
+        if task.report_type == "daily":
+            target = date.fromisoformat(task.target_key)
+            return start_date <= target <= end_date
+        if task.report_type == "weekly" and ":" in task.target_key:
+            start_text, end_text = task.target_key.split(":", 1)
+            task_start = date.fromisoformat(start_text)
+            task_end = date.fromisoformat(end_text)
+            return task_start <= end_date and task_end >= start_date
+    except ValueError:
+        return False
+    return False
+
+
 def get_counts(db: DBSession) -> dict:
     return {
         "sessions": db.query(Session).count(),
@@ -19,6 +40,39 @@ def get_counts(db: DBSession) -> dict:
         "daily_reports": db.query(DailyReport).count(),
         "weekly_reports": db.query(WeeklyReport).count(),
         "report_tasks": db.query(ReportTask).count(),
+    }
+
+
+def get_range_counts(db: DBSession, start_date: date, end_date: date) -> dict:
+    validate_range(start_date, end_date)
+    session_ids = [
+        row[0]
+        for row in db.query(Session.session_id)
+        .filter(Session.session_date >= start_date, Session.session_date <= end_date)
+        .all()
+    ]
+
+    message_count = 0
+    if session_ids:
+        message_count = db.query(Message).filter(Message.session_id.in_(session_ids)).count()
+
+    weekly_reports = db.query(WeeklyReport).filter(
+        WeeklyReport.week_start_date <= end_date,
+        WeeklyReport.week_end_date >= start_date,
+    ).all()
+
+    tasks = db.query(ReportTask).all()
+    task_count = sum(1 for task in tasks if task_in_range(task, start_date, end_date))
+
+    return {
+        "sessions": len(session_ids),
+        "messages": message_count,
+        "daily_reports": db.query(DailyReport).filter(
+            DailyReport.report_date >= start_date,
+            DailyReport.report_date <= end_date,
+        ).count(),
+        "weekly_reports": len(weekly_reports),
+        "report_tasks": task_count,
     }
 
 
@@ -58,40 +112,61 @@ def storage_overview(db: DBSession = Depends(get_db)):
 
 
 @router.get("/cleanup/preview")
-def cleanup_preview(db: DBSession = Depends(get_db)):
-    """预览全部清除会影响的数据量"""
+def cleanup_preview(
+    start_date: date = Query(..., description="开始日期"),
+    end_date: date = Query(..., description="结束日期"),
+    db: DBSession = Depends(get_db),
+):
+    """预览指定日期范围内会影响的数据量"""
     return {
-        "counts": get_counts(db),
-        "scope": "all",
+        "counts": get_range_counts(db, start_date, end_date),
+        "scope": "range",
+        "start_date": start_date,
+        "end_date": end_date,
     }
 
 
-@router.delete("/cleanup/all")
-def cleanup_all(confirm: str, db: DBSession = Depends(get_db)):
-    """全部清除会话、消息、日报、周报和任务记录"""
-    if confirm != "CLEAR_ALL":
+@router.delete("/cleanup/range")
+def cleanup_range(
+    confirm: str,
+    start_date: date = Query(..., description="开始日期"),
+    end_date: date = Query(..., description="结束日期"),
+    db: DBSession = Depends(get_db),
+):
+    """清除指定日期范围内的会话、消息、日报、周报和任务记录"""
+    if confirm != "CLEAR_RANGE":
         raise HTTPException(status_code=400, detail="确认参数错误")
 
-    before = get_counts(db)
-    dialect = engine.dialect.name
+    validate_range(start_date, end_date)
+    before = get_range_counts(db, start_date, end_date)
 
     try:
-        if dialect == "postgresql":
-            db.execute(text(
-                "TRUNCATE TABLE messages, sessions, daily_reports, weekly_reports, report_tasks "
-                "RESTART IDENTITY CASCADE"
-            ))
-        elif dialect == "mysql":
-            db.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
-            for table in ["messages", "sessions", "daily_reports", "weekly_reports", "report_tasks"]:
-                db.execute(text(f"TRUNCATE TABLE {table}"))
-            db.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
-        else:
-            db.query(Message).delete(synchronize_session=False)
-            db.query(Session).delete(synchronize_session=False)
-            db.query(DailyReport).delete(synchronize_session=False)
-            db.query(WeeklyReport).delete(synchronize_session=False)
-            db.query(ReportTask).delete(synchronize_session=False)
+        session_ids = [
+            row[0]
+            for row in db.query(Session.session_id)
+            .filter(Session.session_date >= start_date, Session.session_date <= end_date)
+            .all()
+        ]
+        if session_ids:
+            db.query(Message).filter(Message.session_id.in_(session_ids)).delete(synchronize_session=False)
+            db.query(Session).filter(Session.session_id.in_(session_ids)).delete(synchronize_session=False)
+
+        db.query(DailyReport).filter(
+            DailyReport.report_date >= start_date,
+            DailyReport.report_date <= end_date,
+        ).delete(synchronize_session=False)
+
+        weekly_reports = db.query(WeeklyReport).filter(
+            WeeklyReport.week_start_date <= end_date,
+            WeeklyReport.week_end_date >= start_date,
+        ).all()
+        for report in weekly_reports:
+            db.delete(report)
+
+        tasks = db.query(ReportTask).all()
+        for task in tasks:
+            if task_in_range(task, start_date, end_date):
+                db.delete(task)
 
         db.commit()
     except Exception:
@@ -99,7 +174,7 @@ def cleanup_all(confirm: str, db: DBSession = Depends(get_db)):
         raise
 
     return {
-        "message": "数据已全部清除",
+        "message": "指定日期范围内的数据已清除",
         "deleted": before,
         "storage": get_storage_info(db),
         "counts": get_counts(db),

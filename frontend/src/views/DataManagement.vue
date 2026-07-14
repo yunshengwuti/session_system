@@ -12,7 +12,7 @@
       </template>
 
       <div class="storage-section">
-        <div class="section-title">数据库容量</div>
+        <div class="section-title centered-title">数据库容量</div>
         <div class="storage-summary">
           <div class="storage-number">
             {{ storage.used_mb }} MB
@@ -26,7 +26,7 @@
         </div>
       </div>
 
-      <div class="section-title">当前数据</div>
+      <div class="section-title centered-title">当前数据</div>
       <div class="count-grid">
         <div class="count-item">
           <div class="count-value">{{ counts.sessions }}</div>
@@ -51,19 +51,32 @@
       </div>
 
       <div class="danger-zone">
-        <div>
-          <div class="section-title danger-title">全部清除</div>
+        <div class="danger-main">
+          <div class="section-title danger-title">按日期清除</div>
           <div class="danger-text">
-            清除后会删除所有会话、消息、日报、周报和报告生成任务记录。这个操作不可撤销。
+            选择日期范围后，会清除范围内的会话、消息、日报、重叠周报和相关生成任务记录。这个操作不可撤销。
           </div>
+
+          <div class="cleanup-form">
+            <el-date-picker
+              v-model="cleanupRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+              :unlink-panels="false"
+            />
+          </div>
+
           <div v-if="preview" class="preview-box">
-            将删除：{{ preview.counts.sessions }} 条会话、{{ preview.counts.messages }} 条消息、{{ preview.counts.daily_reports }} 份日报、{{ preview.counts.weekly_reports }} 份周报、{{ preview.counts.report_tasks }} 条任务记录。
+            将删除 {{ preview.start_date }} 至 {{ preview.end_date }}：{{ preview.counts.sessions }} 条会话、{{ preview.counts.messages }} 条消息、{{ preview.counts.daily_reports }} 份日报、{{ preview.counts.weekly_reports }} 份周报、{{ preview.counts.report_tasks }} 条任务记录。
           </div>
         </div>
         <div class="danger-actions">
           <el-button @click="previewCleanup" :loading="previewing">预览清除影响</el-button>
-          <el-button type="danger" @click="clearAll" :loading="clearing" :disabled="!preview">
-            全部清除
+          <el-button type="danger" @click="clearRange" :loading="clearing" :disabled="!preview">
+            清除所选范围
           </el-button>
         </div>
       </div>
@@ -72,7 +85,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { managementAPI } from '../api'
@@ -81,6 +94,7 @@ const loading = ref(false)
 const previewing = ref(false)
 const clearing = ref(false)
 const preview = ref(null)
+const cleanupRange = ref(null)
 
 const storage = reactive({
   used_mb: 0,
@@ -104,6 +118,14 @@ const storageStatus = computed(() => {
   return undefined
 })
 
+const selectedRange = computed(() => {
+  if (!cleanupRange.value || cleanupRange.value.length !== 2) return null
+  return {
+    startDate: cleanupRange.value[0],
+    endDate: cleanupRange.value[1]
+  }
+})
+
 const applyOverview = (data) => {
   Object.assign(storage, data.storage || {})
   Object.assign(counts, data.counts || {})
@@ -123,24 +145,37 @@ const loadOverview = async () => {
 }
 
 const previewCleanup = async () => {
+  if (!selectedRange.value) {
+    ElMessage.warning('请选择清除日期范围')
+    return
+  }
+
   previewing.value = true
   try {
-    preview.value = await managementAPI.previewCleanup()
+    preview.value = await managementAPI.previewCleanup(
+      selectedRange.value.startDate,
+      selectedRange.value.endDate
+    )
   } catch (error) {
-    ElMessage.error('预览清除影响失败')
+    ElMessage.error(error.response?.data?.detail || '预览清除影响失败')
     console.error(error)
   } finally {
     previewing.value = false
   }
 }
 
-const clearAll = async () => {
+const clearRange = async () => {
+  if (!preview.value || !selectedRange.value) {
+    ElMessage.warning('请先预览清除影响')
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
-      '确认清除全部数据？会话、消息、日报、周报和任务记录都会被删除，且不可撤销。',
+      `确认清除 ${selectedRange.value.startDate} 至 ${selectedRange.value.endDate} 的数据？这个操作不可撤销。`,
       '危险操作',
       {
-        confirmButtonText: '确认全部清除',
+        confirmButtonText: '确认清除',
         cancelButtonText: '取消',
         type: 'warning',
         confirmButtonClass: 'el-button--danger'
@@ -148,19 +183,26 @@ const clearAll = async () => {
     )
 
     clearing.value = true
-    const result = await managementAPI.clearAll()
-    ElMessage.success(result.message || '数据已全部清除')
+    const result = await managementAPI.clearRange(
+      selectedRange.value.startDate,
+      selectedRange.value.endDate
+    )
+    ElMessage.success(result.message || '数据已清除')
     preview.value = null
     applyOverview(result)
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.detail || '全部清除失败')
+      ElMessage.error(error.response?.data?.detail || '清除失败')
       console.error(error)
     }
   } finally {
     clearing.value = false
   }
 }
+
+watch(cleanupRange, () => {
+  preview.value = null
+})
 
 onMounted(() => {
   loadOverview()
@@ -169,7 +211,7 @@ onMounted(() => {
 
 <style scoped>
 .data-management {
-  max-width: 1200px;
+  max-width: 980px;
   margin: 0 auto;
 }
 
@@ -190,7 +232,13 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.centered-title {
+  text-align: center;
+}
+
 .storage-summary {
+  max-width: 680px;
+  margin: 0 auto;
   padding: 18px;
   background: #f5f7fa;
   border: 1px solid #ebeef5;
@@ -202,6 +250,7 @@ onMounted(() => {
   color: #303133;
   font-size: 28px;
   font-weight: 700;
+  text-align: center;
 }
 
 .storage-number span {
@@ -255,6 +304,11 @@ onMounted(() => {
   border-radius: 6px;
 }
 
+.danger-main {
+  min-width: 0;
+  flex: 1;
+}
+
 .danger-title {
   color: #c45656;
 }
@@ -262,6 +316,15 @@ onMounted(() => {
 .danger-text {
   color: #606266;
   line-height: 1.7;
+}
+
+.cleanup-form {
+  margin-top: 14px;
+}
+
+.cleanup-form :deep(.el-date-editor) {
+  width: 320px;
+  max-width: 100%;
 }
 
 .preview-box {
@@ -278,6 +341,10 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
+  .data-management {
+    max-width: none;
+  }
+
   .count-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

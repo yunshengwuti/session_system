@@ -49,13 +49,15 @@ export const managementAPI = {
     return api.get('/management/storage')
   },
 
-  previewCleanup() {
-    return api.get('/management/cleanup/preview')
+  previewCleanup(startDate, endDate) {
+    return api.get('/management/cleanup/preview', {
+      params: { start_date: startDate, end_date: endDate }
+    })
   },
 
-  clearAll() {
-    return api.delete('/management/cleanup/all', {
-      params: { confirm: 'CLEAR_ALL' }
+  clearRange(startDate, endDate) {
+    return api.delete('/management/cleanup/range', {
+      params: { start_date: startDate, end_date: endDate, confirm: 'CLEAR_RANGE' }
     })
   },
 }
