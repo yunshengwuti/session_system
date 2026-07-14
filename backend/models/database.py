@@ -53,6 +53,22 @@ class DailyReport(Base):
     generated_at = Column(DateTime, default=datetime.now, comment="生成时间")
 
 
+class ReportTask(Base):
+    """报告生成任务状态"""
+    __tablename__ = "report_tasks"
+
+    task_id = Column(String(64), primary_key=True, comment="任务ID")
+    report_type = Column(String(20), index=True, comment="报告类型: daily/weekly")
+    target_key = Column(String(64), index=True, comment="报告日期或日期范围")
+    status = Column(String(20), default="pending", index=True, comment="pending/running/succeeded/failed")
+    progress = Column(Integer, default=0, comment="进度百分比")
+    message = Column(String(500), comment="当前步骤说明")
+    error = Column(Text, comment="失败原因")
+    result_key = Column(String(64), comment="生成成功后的报告标识")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+
+
 class WeeklyReport(Base):
     """每周AI总结报告"""
     __tablename__ = "weekly_reports"

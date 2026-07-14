@@ -52,12 +52,24 @@ export const reportAPI = {
 
   // 生成日报
   createDailyReport(date) {
-    return api.post(`/reports/daily?report_date=${date}`)
+    return api.post(`/reports/daily?report_date=${date}`, null, {
+      timeout: 10 * 60 * 1000
+    })
+  },
+
+  // 启动日报后台生成任务
+  createDailyReportTask(date) {
+    return api.post(`/reports/daily/task?report_date=${date}`)
   },
 
   // 删除日报
   deleteDailyReport(date) {
     return api.delete(`/reports/daily/${date}`)
+  },
+
+  // 查询报告生成任务
+  getReportTask(taskId) {
+    return api.get(`/reports/tasks/${taskId}`)
   },
 
   // 获取周报列表
@@ -72,7 +84,14 @@ export const reportAPI = {
 
   // 生成周报（新版：支持自定义日期范围）
   createWeeklyReport(startDate, endDate) {
-    return api.post(`/reports/weekly?start_date=${startDate}&end_date=${endDate}`)
+    return api.post(`/reports/weekly?start_date=${startDate}&end_date=${endDate}`, null, {
+      timeout: 15 * 60 * 1000
+    })
+  },
+
+  // 启动周报后台生成任务
+  createWeeklyReportTask(startDate, endDate) {
+    return api.post(`/reports/weekly/task?start_date=${startDate}&end_date=${endDate}`)
   },
 
   // 删除周报

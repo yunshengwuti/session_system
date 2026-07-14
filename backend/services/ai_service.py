@@ -45,10 +45,13 @@ async def call_ai_api(prompt: str, system: str = "") -> str:
         return result["choices"][0]["message"]["content"]
 
 
-async def generate_daily_report(sessions_data: list) -> dict:
+async def generate_daily_report(sessions_data: list, progress_callback=None) -> dict:
     """生成日报 - 分批处理所有会话"""
 
     total_sessions = len(sessions_data)
+
+    if progress_callback:
+        await progress_callback(5, f"准备分析 {total_sessions} 个会话")
 
     # 统计客服分布
     service_counter = Counter()
@@ -123,6 +126,10 @@ async def generate_daily_report(sessions_data: list) -> dict:
         batch_num = i // batch_size + 1
         total_batches = (total_sessions + batch_size - 1) // batch_size
 
+        if progress_callback:
+            progress = 10 + int(65 * batch_num / max(total_batches, 1))
+            await progress_callback(progress, f"正在分析第 {batch_num}/{total_batches} 批会话")
+
         print(f"🔄 分析第 {batch_num}/{total_batches} 批（{len(batch)} 个会话）...")
 
         # 在每批之间添加延迟，避免触发速率限制
@@ -196,6 +203,9 @@ async def generate_daily_report(sessions_data: list) -> dict:
             continue
 
     print(f"\n📊 所有批次分析完成，开始生成综合报告...\n")
+
+    if progress_callback:
+        await progress_callback(80, "正在生成综合分析")
 
     # 等待5秒再生成综合报告，避免速率限制
     print(f"⏱️  等待5秒避免速率限制...")
@@ -275,6 +285,9 @@ async def generate_daily_report(sessions_data: list) -> dict:
 
         summary_result = json.loads(cleaned)
 
+        if progress_callback:
+            await progress_callback(90, "正在整理日报结果")
+
         # 计算分类占比
         total_category_count = sum(all_categories.values())
         category_stats = {}
@@ -332,7 +345,7 @@ async def generate_daily_report(sessions_data: list) -> dict:
         }
 
 
-async def generate_weekly_report(week_sessions_data: list, daily_reports: list) -> dict:
+async def generate_weekly_report(week_sessions_data: list, daily_reports: list, progress_callback=None) -> dict:
     """生成周报 - 基于日报汇总"""
     from collections import Counter
     from datetime import datetime
@@ -341,6 +354,9 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list) 
         raise ValueError("周报需要3-7份日报数据")
 
     # ========== 阶段1：代码汇总数据 ==========
+
+    if progress_callback:
+        await progress_callback(82, "正在汇总日报数据")
 
     # 1. 总体数据统计
     total_sessions = sum([r["total_sessions"] for r in daily_reports])
@@ -482,6 +498,9 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list) 
         print(f"\n📊 开始生成周报（{start_date} 至 {end_date}）...\n")
 
         response = await call_ai_api(prompt, system="你是专业的数据分析助手")
+
+        if progress_callback:
+            await progress_callback(92, "正在解析周报结果")
 
         # 清理返回
         cleaned = response.strip()

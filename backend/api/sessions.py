@@ -17,6 +17,8 @@ router = APIRouter(prefix="/api/sessions", tags=["会话"])
 @router.get("", response_model=SessionListResponse)
 def list_sessions(
     session_date: Optional[date] = Query(None, description="会话日期"),
+    start_date: Optional[date] = Query(None, description="开始日期"),
+    end_date: Optional[date] = Query(None, description="结束日期"),
     customer_name: Optional[str] = Query(None, description="客户名称"),
     org_name: Optional[str] = Query(None, description="机构名称"),
     customer_service: Optional[str] = Query(None, description="客服名称"),
@@ -30,6 +32,11 @@ def list_sessions(
     # 每个条件都是可选的，只有提供了才添加过滤
     if session_date:
         query = query.filter(Session.session_date == session_date)
+    else:
+        if start_date:
+            query = query.filter(Session.session_date >= start_date)
+        if end_date:
+            query = query.filter(Session.session_date <= end_date)
     if customer_name:
         query = query.filter(Session.customer_name.contains(customer_name))
     if org_name:

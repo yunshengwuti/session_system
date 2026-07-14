@@ -13,13 +13,22 @@
               value-format="YYYY-MM-DD"
               style="margin-right: 10px"
             />
-            <el-button type="primary" @click="generateReport" :loading="generating">
+            <el-button type="primary" @click="generateReport" :loading="generating" :disabled="generationTask.active">
               <el-icon><Plus /></el-icon>
               生成日报
             </el-button>
           </div>
         </div>
       </template>
+
+      <!-- 生成进度 -->
+      <div v-if="generationTask.active" class="generation-progress">
+        <div class="progress-header">
+          <span>{{ generationTask.message || '报告生成中' }}</span>
+          <span class="progress-status">{{ generationTask.progress }}%</span>
+        </div>
+        <el-progress :percentage="generationTask.progress" :status="progressStatus" />
+      </div>
 
       <!-- 日报列表 -->
       <el-table v-loading="loading" :data="reports" style="width: 100%">
@@ -128,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
 import { reportAPI } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -143,6 +152,64 @@ const currentReport = ref(null)
 
 const categoryChart = ref(null)
 const serviceChart = ref(null)
+
+const generationTask = ref({
+  active: false,
+  progress: 0,
+  message: '',
+  status: ''
+})
+const taskTimer = ref(null)
+
+const progressStatus = computed(() => {
+  if (generationTask.value.status === 'succeeded') return 'success'
+  if (generationTask.value.status === 'failed') return 'exception'
+  return undefined
+})
+
+const stopTaskPolling = () => {
+  if (taskTimer.value) {
+    clearTimeout(taskTimer.value)
+    taskTimer.value = null
+  }
+}
+
+const setGenerationTask = (task, active = true) => {
+  generationTask.value = {
+    active,
+    progress: task.progress || 0,
+    message: task.message || '',
+    status: task.status || ''
+  }
+}
+
+const pollReportTask = async (taskId) => {
+  stopTaskPolling()
+  try {
+    const task = await reportAPI.getReportTask(taskId)
+    setGenerationTask(task)
+
+    if (task.status === 'succeeded') {
+      ElMessage.success(task.message || '日报生成成功')
+      await loadReports()
+      setTimeout(() => {
+        generationTask.value.active = false
+      }, 1200)
+      return
+    }
+
+    if (task.status === 'failed') {
+      ElMessage.error(task.error || task.message || '日报生成失败')
+      return
+    }
+
+    taskTimer.value = setTimeout(() => pollReportTask(taskId), 2000)
+  } catch (error) {
+    ElMessage.error('获取生成进度失败')
+    console.error(error)
+  }
+}
+
 
 // 从 org_distribution_json 中提取风险和建议
 const risks = computed(() => {
@@ -183,15 +250,15 @@ const generateReport = async () => {
     return
   }
 
+  stopTaskPolling()
   generating.value = true
   try {
-    await reportAPI.createDailyReport(selectedDate.value)
-    ElMessage.success('日报生成成功')
-    // 等待500ms确保数据已写入数据库
-    await new Promise(resolve => setTimeout(resolve, 500))
-    await loadReports()
+    const task = await reportAPI.createDailyReportTask(selectedDate.value)
+    setGenerationTask(task)
+    ElMessage.info('日报生成任务已开始')
+    pollReportTask(task.task_id)
   } catch (error) {
-    ElMessage.error('日报生成失败')
+    ElMessage.error(error.response?.data?.detail || '日报任务启动失败')
     console.error(error)
   } finally {
     generating.value = false
@@ -322,6 +389,10 @@ const renderServiceChart = () => {
 onMounted(() => {
   loadReports()
 })
+
+onBeforeUnmount(() => {
+  stopTaskPolling()
+})
 </script>
 
 <style scoped>
@@ -333,6 +404,28 @@ onMounted(() => {
 
 .report-detail {
   padding: 20px;
+}
+
+.generation-progress {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  color: #606266;
+  font-size: 14px;
+}
+
+.progress-status {
+  color: #409EFF;
+  font-weight: 600;
 }
 
 .section {

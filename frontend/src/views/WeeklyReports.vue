@@ -19,13 +19,22 @@
             <el-text v-if="dateRangeError" type="danger" style="margin-right: 10px; font-size: 12px">
               {{ dateRangeError }}
             </el-text>
-            <el-button type="primary" @click="generateReport" :loading="generating" :disabled="!!dateRangeError || !dateRange">
+            <el-button type="primary" @click="generateReport" :loading="generating" :disabled="!!dateRangeError || !dateRange || generationTask.active">
               <el-icon><Plus /></el-icon>
               生成周报
             </el-button>
           </div>
         </div>
       </template>
+
+      <!-- 生成进度 -->
+      <div v-if="generationTask.active" class="generation-progress">
+        <div class="progress-header">
+          <span>{{ generationTask.message || '报告生成中' }}</span>
+          <span class="progress-status">{{ generationTask.progress }}%</span>
+        </div>
+        <el-progress :percentage="generationTask.progress" :status="progressStatus" />
+      </div>
 
       <!-- 周报列表 -->
       <el-table v-loading="loading" :data="reports" style="width: 100%">
@@ -109,7 +118,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
@@ -124,6 +133,64 @@ const currentReport = ref(null)
 const showDetail = ref(false)
 const categoryChart = ref(null)
 const trendChart = ref(null)
+
+const generationTask = ref({
+  active: false,
+  progress: 0,
+  message: '',
+  status: ''
+})
+const taskTimer = ref(null)
+
+const progressStatus = computed(() => {
+  if (generationTask.value.status === 'succeeded') return 'success'
+  if (generationTask.value.status === 'failed') return 'exception'
+  return undefined
+})
+
+const stopTaskPolling = () => {
+  if (taskTimer.value) {
+    clearTimeout(taskTimer.value)
+    taskTimer.value = null
+  }
+}
+
+const setGenerationTask = (task, active = true) => {
+  generationTask.value = {
+    active,
+    progress: task.progress || 0,
+    message: task.message || '',
+    status: task.status || ''
+  }
+}
+
+const pollReportTask = async (taskId) => {
+  stopTaskPolling()
+  try {
+    const task = await reportAPI.getReportTask(taskId)
+    setGenerationTask(task)
+
+    if (task.status === 'succeeded') {
+      ElMessage.success(task.message || '周报生成成功')
+      await loadReports()
+      setTimeout(() => {
+        generationTask.value.active = false
+      }, 1200)
+      return
+    }
+
+    if (task.status === 'failed') {
+      ElMessage.error(task.error || task.message || '周报生成失败')
+      return
+    }
+
+    taskTimer.value = setTimeout(() => pollReportTask(taskId), 2000)
+  } catch (error) {
+    ElMessage.error('获取生成进度失败')
+    console.error(error)
+  }
+}
+
 
 // 验证日期范围（3-7天）
 const validateDateRange = () => {
@@ -174,15 +241,15 @@ const generateReport = async () => {
 
   const [startDate, endDate] = dateRange.value
 
+  stopTaskPolling()
   generating.value = true
   try {
-    await reportAPI.createWeeklyReport(startDate, endDate)
-    ElMessage.success('周报生成成功（可能需要几分钟，请耐心等待）')
-    // 等待1秒确保数据已写入数据库
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    await loadReports()
+    const task = await reportAPI.createWeeklyReportTask(startDate, endDate)
+    setGenerationTask(task)
+    ElMessage.info('周报生成任务已开始')
+    pollReportTask(task.task_id)
   } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '周报生成失败')
+    ElMessage.error(error.response?.data?.detail || '周报任务启动失败')
     console.error(error)
   } finally {
     generating.value = false
@@ -333,6 +400,10 @@ const renderTrendChart = () => {
 onMounted(() => {
   loadReports()
 })
+
+onBeforeUnmount(() => {
+  stopTaskPolling()
+})
 </script>
 
 <style scoped>
@@ -349,6 +420,28 @@ onMounted(() => {
 
 .report-detail {
   padding: 20px;
+}
+
+.generation-progress {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  color: #606266;
+  font-size: 14px;
+}
+
+.progress-status {
+  color: #409EFF;
+  font-weight: 600;
 }
 
 .section {
