@@ -59,31 +59,6 @@ def update_task(
     db.commit()
 
 
-def build_previous_weekly_context(db: DBSession, start_date: date) -> Optional[dict]:
-    previous = db.query(WeeklyReport).filter(
-        WeeklyReport.week_end_date < start_date
-    ).order_by(WeeklyReport.week_end_date.desc()).first()
-
-    if not previous:
-        return None
-
-    org_data = previous.org_distribution_json or {}
-    return {
-        "week_start_date": previous.week_start_date,
-        "week_end_date": previous.week_end_date,
-        "total_sessions": previous.total_sessions,
-        "keywords_json": previous.keywords_json or {},
-        "category_stats_json": previous.category_stats_json or {},
-        "daily_trend_json": previous.daily_trend_json or [],
-        "ai_summary": previous.ai_summary or "",
-        "trends": org_data.get("trends", ""),
-        "key_risks": org_data.get("key_risks", []),
-        "next_week_plan": org_data.get("next_week_plan", []),
-        "week_over_week_analysis": org_data.get("week_over_week_analysis", ""),
-        "next_week_prediction": org_data.get("next_week_prediction", ""),
-    }
-
-
 def build_daily_sessions_data(db: DBSession, report_date: date) -> list[dict]:
     sessions = db.query(Session).filter(Session.session_date == report_date).all()
     sessions_data = []
@@ -238,15 +213,8 @@ async def run_weekly_report_task(task_id: str, start_date_str: str, end_date_str
         async def weekly_progress_callback(progress: int, message: str) -> None:
             update_task(db, task_id, status="running", progress=progress, message=message)
 
-        previous_weekly_report = build_previous_weekly_context(db, start_date)
-
         update_task(db, task_id, status="running", progress=78, message="正在生成周报")
-        weekly_result = await generate_weekly_report(
-            [],
-            daily_reports_data,
-            previous_weekly_report=previous_weekly_report,
-            progress_callback=weekly_progress_callback
-        )
+        weekly_result = await generate_weekly_report([], daily_reports_data, progress_callback=weekly_progress_callback)
         weekly_report = WeeklyReport(
             week_start_date=start_date,
             week_end_date=end_date,
