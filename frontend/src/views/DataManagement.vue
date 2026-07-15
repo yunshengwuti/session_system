@@ -298,6 +298,7 @@ onMounted(() => {
 .danger-topline {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   margin: 0 0 12px 0;
 }
