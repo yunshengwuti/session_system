@@ -44,19 +44,24 @@
           </template>
         </el-table-column>
         <el-table-column prop="total_sessions" label="总会话数" width="150" align="center" />
-        <el-table-column label="生成时间" width="220" align="center">
+        <el-table-column label="生成时间" min-width="220" align="center">
           <template #default="{ row }">
             {{ new Date(row.generated_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260" align="center">
+        <el-table-column label="操作" width="320" align="center">
           <template #default="{ row }">
-            <el-button type="primary" link @click="viewReport(row)">查看详情</el-button>
-            <el-button type="success" link @click="exportReport(row)">
+            <el-button type="primary" size="small" @click="viewReport(row)">查看详情</el-button>
+            <el-button
+              type="success"
+              size="small"
+              @click="exportReport(row)"
+              :loading="exportingKey === row.week_start_date"
+            >
               <el-icon><Download /></el-icon>
               导出Word
             </el-button>
-            <el-button type="danger" link @click="deleteReport(row)">删除</el-button>
+            <el-button type="danger" size="small" @click="deleteReport(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -135,6 +140,7 @@ const generating = ref(false)
 const reports = ref([])
 const currentReport = ref(null)
 const showDetail = ref(false)
+const exportingKey = ref('')
 const categoryChart = ref(null)
 const trendChart = ref(null)
 
@@ -310,12 +316,15 @@ const downloadFile = (blob, filename) => {
 
 // 导出周报
 const exportReport = async (row) => {
+  exportingKey.value = row.week_start_date
   try {
     const blob = await reportAPI.exportWeeklyReport(row.week_start_date)
     downloadFile(blob, `周报_${row.week_start_date}_${row.week_end_date}.docx`)
   } catch (error) {
-    ElMessage.error('导出失败')
+    ElMessage.error('导出失败，请稍后重试')
     console.error(error)
+  } finally {
+    exportingKey.value = ''
   }
 }
 

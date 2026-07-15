@@ -98,7 +98,7 @@ export const reportAPI = {
 
   // 导出日报 Word
   exportDailyReport(date) {
-    return api.get(`/reports/daily/${date}/export`, { responseType: 'blob' })
+    return api.get(`/reports/daily/${date}/export`, { responseType: 'blob', timeout: 180000 })
   },
 
   // 删除日报
@@ -135,7 +135,7 @@ export const reportAPI = {
 
   // 导出周报 Word
   exportWeeklyReport(weekStartDate) {
-    return api.get(`/reports/weekly/${weekStartDate}/export`, { responseType: 'blob' })
+    return api.get(`/reports/weekly/${weekStartDate}/export`, { responseType: 'blob', timeout: 180000 })
   },
 
   // 删除周报

@@ -45,7 +45,12 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewReport(row)">查看详情</el-button>
-            <el-button type="success" size="small" @click="exportReport(row)">
+            <el-button
+              type="success"
+              size="small"
+              @click="exportReport(row)"
+              :loading="exportingKey === row.report_date"
+            >
               <el-icon><Download /></el-icon>
               导出Word
             </el-button>
@@ -153,6 +158,7 @@ const reports = ref([])
 const selectedDate = ref('')
 const dialogVisible = ref(false)
 const currentReport = ref(null)
+const exportingKey = ref('')
 
 const categoryChart = ref(null)
 const serviceChart = ref(null)
@@ -309,12 +315,15 @@ const downloadFile = (blob, filename) => {
 
 // 导出日报
 const exportReport = async (row) => {
+  exportingKey.value = row.report_date
   try {
     const blob = await reportAPI.exportDailyReport(row.report_date)
     downloadFile(blob, `日报_${row.report_date}.docx`)
   } catch (error) {
-    ElMessage.error('导出失败')
+    ElMessage.error('导出失败，请稍后重试')
     console.error(error)
+  } finally {
+    exportingKey.value = ''
   }
 }
 

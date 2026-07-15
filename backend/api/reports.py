@@ -12,6 +12,12 @@ import uuid
 from io import BytesIO
 from urllib.parse import quote
 
+from docx import Document
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
+
 from config.database import get_db, SessionLocal
 from models.database import Session, Message, DailyReport, WeeklyReport, ReportTask
 from models.schemas import DailyReportOut, WeeklyReportOut
@@ -20,26 +26,116 @@ from services.ai_service import generate_daily_report, generate_weekly_report
 router = APIRouter(prefix="/api/reports", tags=["报告"])
 
 
+DOCX_FONT = "Microsoft YaHei"
+DOCX_TEXT_COLOR = RGBColor(47, 52, 55)
+DOCX_MUTED_COLOR = RGBColor(96, 101, 108)
+
+
 def format_datetime(value) -> str:
     if not value:
         return ""
     return value.strftime("%Y-%m-%d %H:%M:%S") if hasattr(value, "strftime") else str(value)
 
 
+def apply_run_style(run, *, size: float = 10.5, bold: Optional[bool] = None, color: Optional[RGBColor] = None) -> None:
+    run.font.name = DOCX_FONT
+    run._element.rPr.rFonts.set(qn("w:eastAsia"), DOCX_FONT)
+    run.font.size = Pt(size)
+    if bold is not None:
+        run.font.bold = bold
+    if color is not None:
+        run.font.color.rgb = color
+
+
+def apply_style_font(style, *, size: float, bold: Optional[bool] = None, color: Optional[RGBColor] = None) -> None:
+    style.font.name = DOCX_FONT
+    style._element.rPr.rFonts.set(qn("w:eastAsia"), DOCX_FONT)
+    style.font.size = Pt(size)
+    if bold is not None:
+        style.font.bold = bold
+    if color is not None:
+        style.font.color.rgb = color
+
+
+def create_report_document():
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = Inches(0.75)
+    section.bottom_margin = Inches(0.75)
+    section.left_margin = Inches(0.85)
+    section.right_margin = Inches(0.85)
+
+    normal = document.styles["Normal"]
+    apply_style_font(normal, size=10.5, color=DOCX_TEXT_COLOR)
+    normal.paragraph_format.line_spacing = 1.3
+    normal.paragraph_format.space_after = Pt(6)
+
+    apply_style_font(document.styles["Heading 1"], size=16, bold=True, color=DOCX_TEXT_COLOR)
+    apply_style_font(document.styles["Heading 2"], size=13, bold=True, color=DOCX_TEXT_COLOR)
+    apply_style_font(document.styles["Heading 3"], size=11.5, bold=True, color=DOCX_TEXT_COLOR)
+    return document
+
+
+def add_report_heading(document, text: str, level: int = 1) -> None:
+    paragraph = document.add_heading(str(text), level=level)
+    if level == 1:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.space_after = Pt(14)
+    elif level == 2:
+        paragraph.paragraph_format.space_before = Pt(10)
+        paragraph.paragraph_format.space_after = Pt(6)
+    else:
+        paragraph.paragraph_format.space_before = Pt(6)
+        paragraph.paragraph_format.space_after = Pt(4)
+
+    sizes = {1: 16, 2: 13, 3: 11.5}
+    for run in paragraph.runs:
+        apply_run_style(run, size=sizes.get(level, 10.5), bold=True, color=DOCX_TEXT_COLOR)
+
+
+def add_body_paragraph(document, text: object) -> None:
+    paragraph = document.add_paragraph("" if text is None else str(text))
+    paragraph.paragraph_format.line_spacing = 1.3
+    paragraph.paragraph_format.space_after = Pt(6)
+    for run in paragraph.runs:
+        apply_run_style(run, size=10.5, color=DOCX_TEXT_COLOR)
+
+
+def format_table_cell(cell, *, is_header: bool = False) -> None:
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    for paragraph in cell.paragraphs:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
+        paragraph.paragraph_format.line_spacing = 1.2
+        paragraph.paragraph_format.space_after = Pt(0)
+        for run in paragraph.runs:
+            apply_run_style(
+                run,
+                size=10.5 if is_header else 10,
+                bold=is_header,
+                color=DOCX_MUTED_COLOR if is_header else DOCX_TEXT_COLOR,
+            )
+
+
 def add_table(document, headers: list[str], rows: list[list]) -> None:
     if not rows:
-        document.add_paragraph("暂无数据")
+        add_body_paragraph(document, "暂无数据")
         return
 
     table = document.add_table(rows=1, cols=len(headers))
     table.style = "Table Grid"
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = True
     for index, header in enumerate(headers):
         table.rows[0].cells[index].text = str(header)
+        format_table_cell(table.rows[0].cells[index], is_header=True)
 
     for row in rows:
         cells = table.add_row().cells
         for index, value in enumerate(row):
             cells[index].text = "" if value is None else str(value)
+            format_table_cell(cells[index])
+
+    document.add_paragraph()
 
 
 def add_key_value_table(document, rows: list[tuple[str, object]]) -> None:
@@ -47,7 +143,7 @@ def add_key_value_table(document, rows: list[tuple[str, object]]) -> None:
 
 
 def add_dict_table(document, title: str, data: Optional[dict], value_label: str = "次数") -> None:
-    document.add_heading(title, level=2)
+    add_report_heading(document, title, level=2)
     rows = [[key, value] for key, value in (data or {}).items()]
     add_table(document, ["名称", value_label], rows)
 
@@ -468,31 +564,29 @@ def export_daily_report(
     db: DBSession = Depends(get_db),
 ):
     """导出某天日报为 Word"""
-    from docx import Document
-
     report = db.query(DailyReport).filter(DailyReport.report_date == report_date).first()
     if not report:
         raise HTTPException(status_code=404, detail=f"{report_date} 的日报不存在")
 
-    document = Document()
-    document.add_heading(f"日报 - {report.report_date}", level=1)
+    document = create_report_document()
+    add_report_heading(document, f"日报 - {report.report_date}", level=1)
 
-    document.add_heading("基本信息", level=2)
+    add_report_heading(document, "基本信息", level=2)
     add_key_value_table(document, [
         ("日期", report.report_date),
         ("总会话数", report.total_sessions),
         ("生成时间", format_datetime(report.generated_at)),
     ])
 
-    document.add_heading("今日问题概览", level=2)
-    document.add_paragraph(report.long_duration_issues or "暂无内容")
+    add_report_heading(document, "今日问题概览", level=2)
+    add_body_paragraph(document, report.long_duration_issues or "暂无内容")
 
     add_dict_table(document, "关键问题统计", report.keywords_json, "次数")
     add_dict_table(document, "问题业务分类", report.category_stats_json, "占比/数值")
 
     org_data = report.org_distribution_json or {}
     risks = org_data.get("risks", [])
-    document.add_heading("异常与风险", level=2)
+    add_report_heading(document, "异常与风险", level=2)
     add_table(
         document,
         ["风险类型", "问题描述", "影响客户数", "紧急程度", "建议处理方式"],
@@ -506,12 +600,12 @@ def export_daily_report(
     )
 
     suggestions = org_data.get("suggestions", [])
-    document.add_heading("行动建议", level=2)
+    add_report_heading(document, "行动建议", level=2)
     if suggestions:
         for index, suggestion in enumerate(suggestions, start=1):
-            document.add_paragraph(f"{index}. {suggestion}")
+            add_body_paragraph(document, f"{index}. {suggestion}")
     else:
-        document.add_paragraph("暂无建议")
+        add_body_paragraph(document, "暂无建议")
 
     add_dict_table(document, "客服工作量", report.service_stats_json, "会话数")
 
@@ -737,29 +831,27 @@ def export_weekly_report(
     db: DBSession = Depends(get_db),
 ):
     """导出某周周报为 Word"""
-    from docx import Document
-
     report = db.query(WeeklyReport).filter(WeeklyReport.week_start_date == week_start_date).first()
     if not report:
         raise HTTPException(status_code=404, detail=f"{week_start_date} 开始的周报不存在")
 
-    document = Document()
-    document.add_heading(f"周报 - {report.week_start_date} 至 {report.week_end_date}", level=1)
+    document = create_report_document()
+    add_report_heading(document, f"周报 - {report.week_start_date} 至 {report.week_end_date}", level=1)
 
-    document.add_heading("基本信息", level=2)
+    add_report_heading(document, "基本信息", level=2)
     add_key_value_table(document, [
         ("周期", f"{report.week_start_date} 至 {report.week_end_date}"),
         ("总会话数", report.total_sessions),
         ("生成时间", format_datetime(report.generated_at)),
     ])
 
-    document.add_heading("本周总结", level=2)
-    document.add_paragraph(report.ai_summary or "暂无内容")
+    add_report_heading(document, "本周总结", level=2)
+    add_body_paragraph(document, report.ai_summary or "暂无内容")
 
     add_dict_table(document, "高频问题TOP", report.keywords_json, "次数")
     add_dict_table(document, "问题业务分类", report.category_stats_json, "占比/数值")
 
-    document.add_heading("每日趋势", level=2)
+    add_report_heading(document, "每日趋势", level=2)
     add_table(
         document,
         ["日期", "会话数", "摘要"],
@@ -767,10 +859,10 @@ def export_weekly_report(
     )
 
     org_data = report.org_distribution_json or {}
-    document.add_heading("本周趋势", level=2)
-    document.add_paragraph(org_data.get("trends", "暂无内容"))
+    add_report_heading(document, "本周趋势", level=2)
+    add_body_paragraph(document, org_data.get("trends", "暂无内容"))
 
-    document.add_heading("重点风险", level=2)
+    add_report_heading(document, "重点风险", level=2)
     add_table(
         document,
         ["风险类型", "问题描述", "建议"],
@@ -782,24 +874,24 @@ def export_weekly_report(
     )
 
     cases = org_data.get("cases", [])
-    document.add_heading("典型案例", level=2)
+    add_report_heading(document, "典型案例", level=2)
     if cases:
         for index, case_item in enumerate(cases, start=1):
-            document.add_heading(f"案例{index}：{case_item.get('title', '')}", level=3)
-            document.add_paragraph(case_item.get("description", ""))
+            add_report_heading(document, f"案例{index}：{case_item.get('title', '')}", level=3)
+            add_body_paragraph(document, case_item.get("description", ""))
             outcome = case_item.get("outcome")
             if outcome:
-                document.add_paragraph(f"处理结果：{outcome}")
+                add_body_paragraph(document, f"处理结果：{outcome}")
     else:
-        document.add_paragraph("暂无案例")
+        add_body_paragraph(document, "暂无案例")
 
     next_week_plan = org_data.get("next_week_plan", [])
-    document.add_heading("下周改进计划", level=2)
+    add_report_heading(document, "下周改进计划", level=2)
     if next_week_plan:
         for index, plan in enumerate(next_week_plan, start=1):
-            document.add_paragraph(f"{index}. {plan}")
+            add_body_paragraph(document, f"{index}. {plan}")
     else:
-        document.add_paragraph("暂无计划")
+        add_body_paragraph(document, "暂无计划")
 
     add_dict_table(document, "客服工作量", report.service_stats_json, "会话数")
 
