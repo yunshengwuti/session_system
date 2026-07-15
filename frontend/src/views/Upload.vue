@@ -6,9 +6,9 @@
       </template>
 
       <el-steps :active="currentStep" align-center style="margin-bottom: 30px">
-        <el-step title="选择文件" icon="Upload" />
-        <el-step title="上传中" icon="Loading" />
-        <el-step title="完成" icon="Select" />
+        <el-step title="选择文件" :icon="Upload" />
+        <el-step title="上传中" :icon="Loading" />
+        <el-step title="完成" :icon="Select" />
       </el-steps>
 
       <!-- 上传区域 -->
@@ -99,7 +99,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, Upload } from '@element-plus/icons-vue'
+import { UploadFilled, Upload, Loading, Select } from '@element-plus/icons-vue'
 import { uploadAPI } from '../api'
 
 const router = useRouter()

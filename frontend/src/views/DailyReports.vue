@@ -160,6 +160,7 @@ const generationTask = ref({
   status: ''
 })
 const taskTimer = ref(null)
+const TASK_STORAGE_KEY = 'session_system_daily_report_task_id'
 
 const progressStatus = computed(() => {
   if (generationTask.value.status === 'succeeded') return 'success'
@@ -171,6 +172,22 @@ const stopTaskPolling = () => {
   if (taskTimer.value) {
     clearTimeout(taskTimer.value)
     taskTimer.value = null
+  }
+}
+
+const saveActiveTask = (taskId) => {
+  if (!taskId) return
+  localStorage.setItem(TASK_STORAGE_KEY, taskId)
+}
+
+const clearActiveTask = () => {
+  localStorage.removeItem(TASK_STORAGE_KEY)
+}
+
+const restoreActiveTask = () => {
+  const taskId = localStorage.getItem(TASK_STORAGE_KEY)
+  if (taskId) {
+    pollReportTask(taskId)
   }
 }
 
@@ -190,6 +207,7 @@ const pollReportTask = async (taskId) => {
     setGenerationTask(task)
 
     if (task.status === 'succeeded') {
+      clearActiveTask()
       ElMessage.success(task.message || '日报生成成功')
       await loadReports()
       setTimeout(() => {
@@ -199,12 +217,20 @@ const pollReportTask = async (taskId) => {
     }
 
     if (task.status === 'failed') {
+      clearActiveTask()
       ElMessage.error(task.error || task.message || '日报生成失败')
+      setTimeout(() => {
+        generationTask.value.active = false
+      }, 2000)
       return
     }
 
     taskTimer.value = setTimeout(() => pollReportTask(taskId), 2000)
   } catch (error) {
+    if (error.response?.status === 404) {
+      clearActiveTask()
+      generationTask.value.active = false
+    }
     ElMessage.error('获取生成进度失败')
     console.error(error)
   }
@@ -255,6 +281,7 @@ const generateReport = async () => {
   try {
     const task = await reportAPI.createDailyReportTask(selectedDate.value)
     setGenerationTask(task)
+    saveActiveTask(task.task_id)
     ElMessage.info('日报生成任务已开始')
     pollReportTask(task.task_id)
   } catch (error) {
@@ -388,6 +415,7 @@ const renderServiceChart = () => {
 
 onMounted(() => {
   loadReports()
+  restoreActiveTask()
 })
 
 onBeforeUnmount(() => {
