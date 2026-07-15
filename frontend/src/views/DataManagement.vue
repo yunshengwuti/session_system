@@ -344,6 +344,7 @@ onMounted(() => {
   gap: 10px;
   margin-top: 14px;
   padding-right: 0;
+  transform: translateX(8px);
 }
 
 @media (max-width: 900px) {
