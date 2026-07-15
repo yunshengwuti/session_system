@@ -42,9 +42,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="generated_at" label="生成时间" width="180" />
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewReport(row)">查看详情</el-button>
+            <el-button type="success" size="small" @click="exportReport(row)">
+              <el-icon><Download /></el-icon>
+              导出Word
+            </el-button>
             <el-button type="danger" size="small" @click="deleteReport(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -140,7 +144,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
 import { reportAPI } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Download, Plus } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 
 const loading = ref(false)
@@ -289,6 +293,28 @@ const generateReport = async () => {
     console.error(error)
   } finally {
     generating.value = false
+  }
+}
+
+const downloadFile = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+// 导出日报
+const exportReport = async (row) => {
+  try {
+    const blob = await reportAPI.exportDailyReport(row.report_date)
+    downloadFile(blob, `日报_${row.report_date}.docx`)
+  } catch (error) {
+    ElMessage.error('导出失败')
+    console.error(error)
   }
 }
 

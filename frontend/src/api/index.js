@@ -96,6 +96,11 @@ export const reportAPI = {
     return api.post(`/reports/daily/task?report_date=${date}`)
   },
 
+  // 导出日报 Word
+  exportDailyReport(date) {
+    return api.get(`/reports/daily/${date}/export`, { responseType: 'blob' })
+  },
+
   // 删除日报
   deleteDailyReport(date) {
     return api.delete(`/reports/daily/${date}`)
@@ -126,6 +131,11 @@ export const reportAPI = {
   // 启动周报后台生成任务
   createWeeklyReportTask(startDate, endDate) {
     return api.post(`/reports/weekly/task?start_date=${startDate}&end_date=${endDate}`)
+  },
+
+  // 导出周报 Word
+  exportWeeklyReport(weekStartDate) {
+    return api.get(`/reports/weekly/${weekStartDate}/export`, { responseType: 'blob' })
   },
 
   // 删除周报

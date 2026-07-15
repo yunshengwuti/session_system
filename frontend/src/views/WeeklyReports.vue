@@ -49,9 +49,13 @@
             {{ new Date(row.generated_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" align="center">
+        <el-table-column label="操作" width="260" align="center">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewReport(row)">查看详情</el-button>
+            <el-button type="success" link @click="exportReport(row)">
+              <el-icon><Download /></el-icon>
+              导出Word
+            </el-button>
             <el-button type="danger" link @click="deleteReport(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -120,7 +124,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Download, Plus } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { reportAPI } from '@/api/index'
 
@@ -291,6 +295,28 @@ const viewReport = async (row) => {
   await nextTick()
   renderCategoryChart()
   renderTrendChart()
+}
+
+const downloadFile = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+// 导出周报
+const exportReport = async (row) => {
+  try {
+    const blob = await reportAPI.exportWeeklyReport(row.week_start_date)
+    downloadFile(blob, `周报_${row.week_start_date}_${row.week_end_date}.docx`)
+  } catch (error) {
+    ElMessage.error('导出失败')
+    console.error(error)
+  }
 }
 
 // 删除周报

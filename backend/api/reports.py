@@ -2,12 +2,15 @@
 统计相关 API
 """
 from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import func
 from typing import Optional
 from datetime import date, timedelta, datetime
 import traceback
 import uuid
+from io import BytesIO
+from urllib.parse import quote
 
 from config.database import get_db, SessionLocal
 from models.database import Session, Message, DailyReport, WeeklyReport, ReportTask
@@ -15,6 +18,50 @@ from models.schemas import DailyReportOut, WeeklyReportOut
 from services.ai_service import generate_daily_report, generate_weekly_report
 
 router = APIRouter(prefix="/api/reports", tags=["报告"])
+
+
+def format_datetime(value) -> str:
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M:%S") if hasattr(value, "strftime") else str(value)
+
+
+def add_table(document, headers: list[str], rows: list[list]) -> None:
+    if not rows:
+        document.add_paragraph("暂无数据")
+        return
+
+    table = document.add_table(rows=1, cols=len(headers))
+    table.style = "Table Grid"
+    for index, header in enumerate(headers):
+        table.rows[0].cells[index].text = str(header)
+
+    for row in rows:
+        cells = table.add_row().cells
+        for index, value in enumerate(row):
+            cells[index].text = "" if value is None else str(value)
+
+
+def add_key_value_table(document, rows: list[tuple[str, object]]) -> None:
+    add_table(document, ["项目", "内容"], rows)
+
+
+def add_dict_table(document, title: str, data: Optional[dict], value_label: str = "次数") -> None:
+    document.add_heading(title, level=2)
+    rows = [[key, value] for key, value in (data or {}).items()]
+    add_table(document, ["名称", value_label], rows)
+
+
+def build_docx_response(document, filename: str) -> StreamingResponse:
+    stream = BytesIO()
+    document.save(stream)
+    stream.seek(0)
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
 
 
 def task_payload(task: ReportTask) -> dict:
@@ -414,6 +461,62 @@ async def create_daily_report(
     return daily_report
 
 
+
+@router.get("/daily/{report_date}/export")
+def export_daily_report(
+    report_date: date,
+    db: DBSession = Depends(get_db),
+):
+    """导出某天日报为 Word"""
+    from docx import Document
+
+    report = db.query(DailyReport).filter(DailyReport.report_date == report_date).first()
+    if not report:
+        raise HTTPException(status_code=404, detail=f"{report_date} 的日报不存在")
+
+    document = Document()
+    document.add_heading(f"日报 - {report.report_date}", level=1)
+
+    document.add_heading("基本信息", level=2)
+    add_key_value_table(document, [
+        ("日期", report.report_date),
+        ("总会话数", report.total_sessions),
+        ("生成时间", format_datetime(report.generated_at)),
+    ])
+
+    document.add_heading("今日问题概览", level=2)
+    document.add_paragraph(report.long_duration_issues or "暂无内容")
+
+    add_dict_table(document, "关键问题统计", report.keywords_json, "次数")
+    add_dict_table(document, "问题业务分类", report.category_stats_json, "占比/数值")
+
+    org_data = report.org_distribution_json or {}
+    risks = org_data.get("risks", [])
+    document.add_heading("异常与风险", level=2)
+    add_table(
+        document,
+        ["风险类型", "问题描述", "影响客户数", "紧急程度", "建议处理方式"],
+        [[
+            risk.get("risk_type", ""),
+            risk.get("description", ""),
+            risk.get("affected_customers", ""),
+            risk.get("urgency", ""),
+            risk.get("suggestion", ""),
+        ] for risk in risks]
+    )
+
+    suggestions = org_data.get("suggestions", [])
+    document.add_heading("行动建议", level=2)
+    if suggestions:
+        for index, suggestion in enumerate(suggestions, start=1):
+            document.add_paragraph(f"{index}. {suggestion}")
+    else:
+        document.add_paragraph("暂无建议")
+
+    add_dict_table(document, "客服工作量", report.service_stats_json, "会话数")
+
+    return build_docx_response(document, f"日报_{report.report_date}.docx")
+
 @router.get("/daily/{report_date}", response_model=DailyReportOut)
 def get_daily_report(
     report_date: date,
@@ -626,6 +729,81 @@ async def create_weekly_report(
 
     return weekly_report
 
+
+
+@router.get("/weekly/{week_start_date}/export")
+def export_weekly_report(
+    week_start_date: date,
+    db: DBSession = Depends(get_db),
+):
+    """导出某周周报为 Word"""
+    from docx import Document
+
+    report = db.query(WeeklyReport).filter(WeeklyReport.week_start_date == week_start_date).first()
+    if not report:
+        raise HTTPException(status_code=404, detail=f"{week_start_date} 开始的周报不存在")
+
+    document = Document()
+    document.add_heading(f"周报 - {report.week_start_date} 至 {report.week_end_date}", level=1)
+
+    document.add_heading("基本信息", level=2)
+    add_key_value_table(document, [
+        ("周期", f"{report.week_start_date} 至 {report.week_end_date}"),
+        ("总会话数", report.total_sessions),
+        ("生成时间", format_datetime(report.generated_at)),
+    ])
+
+    document.add_heading("本周总结", level=2)
+    document.add_paragraph(report.ai_summary or "暂无内容")
+
+    add_dict_table(document, "高频问题TOP", report.keywords_json, "次数")
+    add_dict_table(document, "问题业务分类", report.category_stats_json, "占比/数值")
+
+    document.add_heading("每日趋势", level=2)
+    add_table(
+        document,
+        ["日期", "会话数", "摘要"],
+        [[item.get("date", ""), item.get("sessions", ""), item.get("brief", "")] for item in (report.daily_trend_json or [])]
+    )
+
+    org_data = report.org_distribution_json or {}
+    document.add_heading("本周趋势", level=2)
+    document.add_paragraph(org_data.get("trends", "暂无内容"))
+
+    document.add_heading("重点风险", level=2)
+    add_table(
+        document,
+        ["风险类型", "问题描述", "建议"],
+        [[
+            risk.get("risk_type", ""),
+            risk.get("description", ""),
+            risk.get("suggestion", ""),
+        ] for risk in org_data.get("key_risks", [])]
+    )
+
+    cases = org_data.get("cases", [])
+    document.add_heading("典型案例", level=2)
+    if cases:
+        for index, case_item in enumerate(cases, start=1):
+            document.add_heading(f"案例{index}：{case_item.get('title', '')}", level=3)
+            document.add_paragraph(case_item.get("description", ""))
+            outcome = case_item.get("outcome")
+            if outcome:
+                document.add_paragraph(f"处理结果：{outcome}")
+    else:
+        document.add_paragraph("暂无案例")
+
+    next_week_plan = org_data.get("next_week_plan", [])
+    document.add_heading("下周改进计划", level=2)
+    if next_week_plan:
+        for index, plan in enumerate(next_week_plan, start=1):
+            document.add_paragraph(f"{index}. {plan}")
+    else:
+        document.add_paragraph("暂无计划")
+
+    add_dict_table(document, "客服工作量", report.service_stats_json, "会话数")
+
+    return build_docx_response(document, f"周报_{report.week_start_date}_{report.week_end_date}.docx")
 
 @router.get("/weekly/{week_start_date}", response_model=WeeklyReportOut)
 def get_weekly_report(
