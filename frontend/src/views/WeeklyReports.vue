@@ -62,6 +62,30 @@
     <el-dialog v-model="showDetail" :title="`周报详情 (${currentReport?.week_start_date} 至 ${currentReport?.week_end_date})`" width="80%" top="5vh">
       <div v-if="currentReport" class="report-detail">
 
+        <!-- 本周总结 -->
+        <div class="section" v-if="currentReport.ai_summary">
+          <h3>本周总结</h3>
+          <div class="analysis-content">{{ currentReport.ai_summary }}</div>
+        </div>
+
+        <!-- 本周趋势 -->
+        <div class="section" v-if="trends">
+          <h3>本周趋势</h3>
+          <div class="analysis-content">{{ trends }}</div>
+        </div>
+
+        <!-- 上周对比 -->
+        <div class="section" v-if="weekOverWeekAnalysis">
+          <h3>上周对比</h3>
+          <div class="analysis-content">{{ weekOverWeekAnalysis }}</div>
+        </div>
+
+        <!-- 下周预测 -->
+        <div class="section" v-if="nextWeekPrediction">
+          <h3>下周预测</h3>
+          <div class="analysis-content">{{ nextWeekPrediction }}</div>
+        </div>
+
         <!-- 高频问题TOP10 -->
         <div class="section">
           <h3>高频问题TOP10</h3>
@@ -337,6 +361,14 @@ const trends = computed(() => {
   return currentReport.value?.org_distribution_json?.trends || ''
 })
 
+const weekOverWeekAnalysis = computed(() => {
+  return currentReport.value?.org_distribution_json?.week_over_week_analysis || ''
+})
+
+const nextWeekPrediction = computed(() => {
+  return currentReport.value?.org_distribution_json?.next_week_prediction || ''
+})
+
 const keyRisks = computed(() => {
   return currentReport.value?.org_distribution_json?.key_risks || []
 })
@@ -487,10 +519,12 @@ onBeforeUnmount(() => {
   font-weight: bold;
 }
 
-.overview-content {
+.overview-content,
+.analysis-content {
   line-height: 1.8;
   white-space: pre-wrap;
   padding: 15px;
+  color: #303133;
   background-color: #f5f7fa;
   border-radius: 4px;
 }

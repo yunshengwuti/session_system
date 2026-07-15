@@ -345,7 +345,7 @@ async def generate_daily_report(sessions_data: list, progress_callback=None) -> 
         }
 
 
-async def generate_weekly_report(week_sessions_data: list, daily_reports: list, progress_callback=None) -> dict:
+async def generate_weekly_report(week_sessions_data: list, daily_reports: list, previous_weekly_report: Optional[dict] = None, progress_callback=None) -> dict:
     """生成周报 - 基于日报汇总"""
     from collections import Counter
     from datetime import datetime
@@ -426,7 +426,25 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list, 
     start_date = daily_reports[0]["report_date"]
     end_date = daily_reports[-1]["report_date"]
 
-    prompt = f"""你是客服数据分析专家。基于本周汇总数据生成周报。
+    previous_week_context = "无上周周报数据，请只分析本周内部趋势，不要编造环比结论"
+    if previous_weekly_report:
+        previous_week_context = json.dumps({
+            "period": f"{previous_weekly_report.get('week_start_date')} 至 {previous_weekly_report.get('week_end_date')}",
+            "total_sessions": previous_weekly_report.get("total_sessions", 0),
+            "top_problems": previous_weekly_report.get("keywords_json", {}),
+            "categories": previous_weekly_report.get("category_stats_json", {}),
+            "daily_trend": previous_weekly_report.get("daily_trend_json", []),
+            "summary": previous_weekly_report.get("ai_summary", ""),
+            "trends": previous_weekly_report.get("trends", ""),
+            "key_risks": previous_weekly_report.get("key_risks", []),
+            "last_plan": previous_weekly_report.get("next_week_plan", []),
+            "last_prediction": previous_weekly_report.get("next_week_prediction", "")
+        }, ensure_ascii=False, indent=2, default=str)
+
+    prompt = f"""你是客服数据分析专家。请基于本周日报汇总和上周周报，生成一份有解释、有对比、有趋势判断的周报。
+
+## 上周周报上下文
+{previous_week_context}
 
 ## 本周数据汇总（{start_date} 至 {end_date}，共{len(daily_reports)}天）
 
@@ -439,12 +457,12 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list, 
 ### 高频问题TOP10（本周累计）
 {json.dumps(dict(top_problems), ensure_ascii=False, indent=2)}
 
-### 每日详细分类汇总（需要你重新归纳）
-以下是本周各日报的详细问题分类，请你**重新归纳为5-8个大类**：
+### 本周问题分类汇总（需要你重新归纳）
+以下是本周各日报的问题分类汇总，请你重新归纳为5-8个大类：
 {json.dumps(merged_categories, ensure_ascii=False, indent=2)}
 
-示例大类：账号管理、数据问题、功能咨询、权限问题、系统Bug、操作指导等
-**要求**：合并相似的细分类，输出粗粒度的大类统计
+示例大类：账号管理、数据问题、功能咨询、权限问题、系统Bug、操作指导等。
+要求：合并相似细分类，输出粗粒度大类统计。
 
 ### 本周风险列表（仅高/中紧急度）
 {json.dumps(high_risks, ensure_ascii=False, indent=2)}
@@ -452,36 +470,35 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list, 
 ### 每日问题概览摘要（关键句）
 {chr(10).join([f"- {d['date']}：{d['brief']}" for d in daily_trend])}
 
-## 任务：生成周报分析（用自然语言，不要模板化）
+## 分析要求
 
-### 1. 重新归纳问题分类
-- 将上述详细分类合并为**5-8个大类**
-- 输出格式：{{"大类名": 百分比}}
-- 百分比之和为100
+### 1. 本周内趋势
+- 必须结合每日会话数和每日问题摘要，说明本周问题是上升、下降、波动还是集中在某几天。
+- 说明是否存在某类问题连续多天出现，或者某天突然升高。
+- 表达要自然，有解释，不要只罗列数字。
 
-### 2. 趋势分析（2-3段纯文字）
-- 从每日会话数看出什么趋势（稳定/波动/增长）
-- 高频问题中哪些值得关注
-- 是否有工作日差异
-- **不要使用引号、方括号等格式符号，直接用自然语言段落**
+### 2. 与上周对比
+- 如果提供了上周周报，必须分析本周相对上周的改善、恶化、新增问题和延续问题。
+- 要判断上周计划或预测中提到的问题，本周是否有缓解或继续出现。
+- 如果没有上周周报，只说明缺少上周基线，不要编造环比结论。
 
-### 3. 重点风险（合并相似风险，只列实际需要关注的）
-- 说明哪些风险反复出现
-- 哪些未解决需要跟进
+### 3. 下周预测
+- 基于上周对比和本周内趋势，预测下周可能继续出现的问题。
+- 预测必须说明依据，例如连续出现、高频问题未下降、风险仍存在等。
+- 不允许凭空预测。
 
-### 4. 典型案例（1-2个，从每日摘要中选取代表性案例）
-- **案例描述直接说问题和处理过程，不要提"某XX机构"这种词**
-- 示例："客户反馈软件无法连接数据库..."而不是"某证券机构反馈..."
-
-### 5. 下周改进计划（3-5条具体可执行的行动）
-- 不要空话，要具体
-- 针对高频问题和风险
+### 4. 输出风格
+- 结构清晰，但不要机械模板化。
+- 分析字段可以使用自然语言段落。
+- 避免空话，例如“持续优化体验”“加强沟通”。建议必须对应具体问题或具体流程。
 
 ## 输出格式（纯JSON）：
 {{
-  "weekly_summary": "本周整体情况（2-3段自然语言）",
+  "weekly_summary": "本周整体判断（2-3段自然语言，说明整体压力、问题集中点和管理判断）",
   "category_summary": {{"大类1": 百分比, "大类2": 百分比}},
-  "trends": "趋势分析（2-3段纯文字，不要用引号、方括号等格式）",
+  "trends": "本周内趋势分析（2-3段自然语言，结合每日变化和问题摘要）",
+  "week_over_week_analysis": "与上周对比分析：改善、恶化、新增、延续问题；若无上周数据则说明缺少基线",
+  "next_week_prediction": "基于趋势的下周预测，必须说明依据",
   "key_risks": [
     {{"risk_type": "类型", "description": "描述", "suggestion": "建议"}}
   ],
@@ -491,7 +508,6 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list, 
   "next_week_plan": ["具体行动1", "具体行动2", "具体行动3"]
 }}
 """
-
     # ========== 阶段3：调用AI生成周报 ==========
 
     try:
@@ -532,6 +548,8 @@ async def generate_weekly_report(week_sessions_data: list, daily_reports: list, 
             "category_stats_json": category_stats,
             "org_distribution_json": {
                 "trends": result.get("trends", ""),
+                "week_over_week_analysis": result.get("week_over_week_analysis", ""),
+                "next_week_prediction": result.get("next_week_prediction", ""),
                 "key_risks": result.get("key_risks", []),
                 "cases": result.get("cases", []),
                 "next_week_plan": result.get("next_week_plan", [])
