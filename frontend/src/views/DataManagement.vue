@@ -289,7 +289,7 @@ onMounted(() => {
 }
 
 .danger-zone {
-  padding: 18px 70px;
+  padding: 20px 70px 15px;
   background: #fef0f0;
   border: 1px solid #fde2e2;
   border-radius: 6px;
